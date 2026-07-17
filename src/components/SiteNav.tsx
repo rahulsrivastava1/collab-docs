@@ -16,10 +16,8 @@ export function SiteNav({ compact = false }: SiteNavProps) {
   const isLogin = path === "/login";
   const isRegister = path === "/register";
 
-  const inactiveClass =
-    "rounded-lg px-3.5 py-2 text-sm font-medium text-zinc-700 transition hover:bg-zinc-100 hover:text-zinc-900";
-  const activeClass =
-    "rounded-lg bg-[#1a73e8] px-3.5 py-2 text-sm font-semibold !text-white shadow-sm transition hover:bg-[#1557b0]";
+  const inactiveClass = "btn btn-ghost";
+  const activeClass = "btn btn-primary";
 
   const displayName = session?.user?.name || session?.user?.email || "User";
   const initial = displayName.charAt(0).toUpperCase();
@@ -45,6 +43,14 @@ export function SiteNav({ compact = false }: SiteNavProps) {
             <span className="text-sm text-zinc-500">Loading…</span>
           ) : session?.user ? (
             <>
+              <Link
+                href="/docs"
+                className={
+                  path.startsWith("/docs") ? "btn btn-secondary" : "btn btn-ghost"
+                }
+              >
+                Docs
+              </Link>
               <div className="inline-flex h-9 items-center gap-2 rounded-full bg-zinc-100 py-0 pl-1 pr-3">
                 {session.user.image ? (
                   <img
@@ -65,7 +71,7 @@ export function SiteNav({ compact = false }: SiteNavProps) {
               <button
                 type="button"
                 onClick={() => signOut({ callbackUrl: "/" })}
-                className="inline-flex h-9 cursor-pointer items-center rounded-full border border-zinc-300 bg-white px-3.5 text-sm font-medium text-zinc-800 transition hover:bg-zinc-50"
+                className="btn btn-secondary btn-pill"
               >
                 Sign out
               </button>

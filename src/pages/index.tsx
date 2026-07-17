@@ -53,22 +53,32 @@ export default function Home() {
           </h1>
           <p className="mt-4 max-w-xl text-lg leading-relaxed text-zinc-600">
             {isLoggedIn
-              ? `Welcome back${session?.user?.name ? `, ${session.user.name}` : ""}. Your documents workspace is coming next.`
+              ? `Welcome back${session?.user?.name ? `, ${session.user.name}` : ""}. Open your documents to create, edit, and share.`
               : "Local-first collaborative documents with offline sync, deterministic conflict resolution, and version history."}
           </p>
           {status !== "loading" && !isLoggedIn ? (
             <div className="mt-8 flex flex-wrap gap-3">
               <Link
                 href="/register"
-                className="rounded-lg bg-[#1a73e8] px-5 py-2.5 text-sm font-semibold !text-white transition hover:bg-[#1557b0]"
+                className="btn btn-primary"
               >
                 Get started
               </Link>
               <Link
                 href="/login"
-                className="rounded-lg border border-zinc-300 bg-white px-5 py-2.5 text-sm font-semibold text-zinc-800 transition hover:bg-zinc-50"
+                className="btn btn-secondary"
               >
                 Sign in
+              </Link>
+            </div>
+          ) : null}
+          {status !== "loading" && isLoggedIn ? (
+            <div className="mt-8">
+              <Link
+                href="/docs"
+                className="btn btn-primary"
+              >
+                Open documents
               </Link>
             </div>
           ) : null}

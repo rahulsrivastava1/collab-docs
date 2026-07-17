@@ -3,6 +3,9 @@
 :root {
   --background: #f4f4f5;
   --foreground: #18181b;
+  --btn-height: 2.25rem; /* 36px — matches profile / Sign out */
+  --brand: #1a73e8;
+  --brand-hover: #1557b0;
 }
 
 @theme inline {
@@ -41,3 +44,115 @@ textarea::placeholder {
   color: #71717a;
   opacity: 1;
 }
+
+/* Shared button system — use across the app */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  height: var(--btn-height);
+  padding: 0 0.875rem;
+  border-radius: 0.5rem;
+  border: 1px solid transparent;
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease,
+    opacity 0.15s ease;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.btn-primary {
+  background: var(--brand);
+  color: #fff !important;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: var(--brand-hover);
+}
+
+.btn-secondary {
+  background: #fff;
+  border-color: #d4d4d8;
+  color: #27272a;
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: #fafafa;
+}
+
+.btn-danger {
+  background: #fff;
+  border-color: #fecaca;
+  color: #dc2626;
+}
+
+.btn-danger:hover:not(:disabled) {
+  background: #fef2f2;
+}
+
+.btn-ghost {
+  background: transparent;
+  color: #52525b;
+}
+
+.btn-ghost:hover:not(:disabled) {
+  background: #f4f4f5;
+  color: #18181b;
+}
+
+.btn-pill {
+  border-radius: 9999px;
+}
+
+.btn-block {
+  width: 100%;
+}
+
+.btn-sm {
+  height: 2rem;
+  padding: 0 0.625rem;
+  font-size: 0.8125rem;
+}
+
+/* Shared select — chevron inset (not flush to the right edge) */
+.select {
+  appearance: none;
+  -webkit-appearance: none;
+  height: var(--btn-height);
+  padding: 0 2rem 0 0.75rem;
+  border-radius: 0.5rem;
+  border: 1px solid #d4d4d8;
+  background-color: #fff;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2352525b' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.7rem center;
+  background-size: 0.75rem;
+  color: #18181b;
+  font-size: 0.875rem;
+  font-weight: 500;
+  line-height: 1;
+  cursor: pointer;
+  outline: none;
+}
+
+.select:focus {
+  border-color: var(--brand);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--brand) 30%, transparent);
+}
+
+.select-sm {
+  height: 2rem;
+  padding: 0 1.75rem 0 0.5rem;
+  font-size: 0.8125rem;
+  background-position: right 0.55rem center;
+}
+

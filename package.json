@@ -8,7 +8,8 @@
     "start": "next start",
     "db:up": "docker compose up -d",
     "db:down": "docker compose down",
-    "db:logs": "docker compose logs -f postgres"
+    "db:logs": "docker compose logs -f postgres",
+    "db:migrate": "docker compose exec -T postgres psql -U docs -d google_docs_clone -f /docker-entrypoint-initdb.d/init.sql || docker compose exec -T postgres psql -U docs -d google_docs_clone < db/migrate-002-documents.sql"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",

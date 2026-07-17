@@ -86,7 +86,7 @@ export default function LoginPage() {
             <button
               type="button"
               onClick={() => signIn("google", { callbackUrl: "/" })}
-              className="mt-6 flex w-full items-center justify-center gap-3 rounded-lg border border-zinc-300 bg-white px-4 py-2.5 text-sm font-semibold text-zinc-900 transition hover:bg-zinc-50"
+              className="btn btn-secondary btn-block mt-6 gap-3"
             >
               <GoogleIcon className="size-5 shrink-0" />
               Continue with Google
@@ -152,7 +152,7 @@ export default function LoginPage() {
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full rounded-lg bg-[#1a73e8] px-4 py-2.5 text-sm font-semibold !text-white transition hover:bg-[#1557b0] disabled:opacity-60"
+                className="btn btn-primary btn-block"
               >
                 {loading ? "Signing in…" : "Sign in"}
               </button>
