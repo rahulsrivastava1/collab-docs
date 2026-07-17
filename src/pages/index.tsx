@@ -1,5 +1,7 @@
 import Head from "next/head";
 import Link from "next/link";
+import { useSession } from "next-auth/react";
+import { SiteNav } from "@/components/SiteNav";
 
 const SITE = {
   name: "Google Docs Clone",
@@ -8,7 +10,6 @@ const SITE = {
   linkedin: "https://www.linkedin.com/in/rahulsriv/",
 } as const;
 
-/** Brand icons — Lucide removed Github/Linkedin brand exports in recent versions. */
 function GithubIcon({ className }: { className?: string }) {
   return (
     <svg className={className} viewBox="0 0 24 24" fill="currentColor" aria-hidden>
@@ -27,6 +28,8 @@ function LinkedinIcon({ className }: { className?: string }) {
 
 export default function Home() {
   const year = new Date().getFullYear();
+  const { data: session, status } = useSession();
+  const isLoggedIn = Boolean(session?.user);
 
   return (
     <>
@@ -38,28 +41,48 @@ export default function Home() {
         />
       </Head>
 
-      <div className="flex min-h-screen flex-col bg-zinc-50 text-zinc-900">
-        <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col justify-center px-6 py-16">
-          <p className="text-sm font-medium tracking-wide text-zinc-500">House of Edtech · Assignment</p>
-          <h1 className="mt-3 text-4xl font-semibold tracking-tight sm:text-5xl">{SITE.name}</h1>
+      <div className="flex min-h-screen flex-col bg-zinc-100 text-zinc-900">
+        <SiteNav />
+
+        <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col justify-center px-6 py-16">
+          <p className="text-sm font-semibold tracking-wide text-[#1a73e8]">
+            House of Edtech · Assignment
+          </p>
+          <h1 className="mt-3 text-4xl font-semibold tracking-tight text-zinc-900 sm:text-5xl">
+            {SITE.name}
+          </h1>
           <p className="mt-4 max-w-xl text-lg leading-relaxed text-zinc-600">
-            Local-first collaborative documents with offline sync, deterministic conflict resolution, and version
-            history.
+            {isLoggedIn
+              ? `Welcome back${session?.user?.name ? `, ${session.user.name}` : ""}. Your documents workspace is coming next.`
+              : "Local-first collaborative documents with offline sync, deterministic conflict resolution, and version history."}
           </p>
-          <p className="mt-8 text-sm text-zinc-500">
-            Scaffold ready · Next.js 16 · TypeScript · Tailwind · Pages Router
-          </p>
+          {status !== "loading" && !isLoggedIn ? (
+            <div className="mt-8 flex flex-wrap gap-3">
+              <Link
+                href="/register"
+                className="rounded-lg bg-[#1a73e8] px-5 py-2.5 text-sm font-semibold !text-white transition hover:bg-[#1557b0]"
+              >
+                Get started
+              </Link>
+              <Link
+                href="/login"
+                className="rounded-lg border border-zinc-300 bg-white px-5 py-2.5 text-sm font-semibold text-zinc-800 transition hover:bg-zinc-50"
+              >
+                Sign in
+              </Link>
+            </div>
+          ) : null}
         </main>
 
         <footer className="border-t border-zinc-200 bg-white">
-          <div className="mx-auto flex w-full max-w-3xl flex-col gap-3 px-6 py-4 text-sm text-zinc-600 sm:flex-row sm:items-center sm:justify-between">
+          <div className="mx-auto flex w-full max-w-5xl flex-col gap-3 px-6 py-4 text-sm text-zinc-600 sm:flex-row sm:items-center sm:justify-between">
             <span>
               © {year}, {SITE.author}
             </span>
             <div className="flex items-center gap-4">
               <Link
                 href={SITE.github}
-                className="inline-flex items-center gap-1.5 text-zinc-600 transition-colors hover:text-zinc-900"
+                className="inline-flex items-center gap-1.5 font-medium text-zinc-700 transition-colors hover:text-zinc-900"
                 target="_blank"
                 rel="noopener noreferrer"
               >
@@ -68,7 +91,7 @@ export default function Home() {
               </Link>
               <Link
                 href={SITE.linkedin}
-                className="inline-flex items-center gap-1.5 text-zinc-600 transition-colors hover:text-zinc-900"
+                className="inline-flex items-center gap-1.5 font-medium text-zinc-700 transition-colors hover:text-zinc-900"
                 target="_blank"
                 rel="noopener noreferrer"
               >
