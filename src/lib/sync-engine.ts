@@ -157,13 +157,42 @@ export async function flushOutbox(
         continue;
       }
 
+      // Prefer CRDT updates; merge all pending yjs updates when present
+      const yjsParts = group
+        .filter((g) => g.op === "update" && g.payload.yjsUpdate)
+        .map((g) => g.payload.yjsUpdate!) ;
+
+      let yjsUpdate: string | undefined;
+      if (yjsParts.length === 1) {
+        yjsUpdate = yjsParts[0];
+      } else if (yjsParts.length > 1) {
+        const Y = await import("yjs");
+        const merged = Y.mergeUpdates(
+          yjsParts.map((b64) => Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))),
+        );
+        let binary = "";
+        merged.forEach((b) => {
+          binary += String.fromCharCode(b);
+        });
+        yjsUpdate = btoa(binary);
+      } else if (latestUpdate.payload.yjsUpdate) {
+        yjsUpdate = latestUpdate.payload.yjsUpdate;
+      }
+
       const res = await fetch(`/api/documents/${documentId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: latestUpdate.payload.title,
-          content: latestUpdate.payload.content,
-        }),
+        body: JSON.stringify(
+          yjsUpdate
+            ? {
+                title: latestUpdate.payload.title,
+                yjsUpdate,
+              }
+            : {
+                title: latestUpdate.payload.title,
+                content: latestUpdate.payload.content,
+              },
+        ),
       });
       const data = (await res.json()) as { document?: RemoteDocument; error?: string };
       if (!res.ok) {
@@ -175,7 +204,18 @@ export async function flushOutbox(
       }
 
       if (data.document) {
-        await markDocumentClean(userId, documentId, data.document.updated_at);
+        const existing = await getLocalDocument(userId, documentId);
+        await putLocalDocument({
+          id: documentId,
+          userId,
+          title: data.document.title,
+          content: data.document.content,
+          role: existing?.role ?? "editor",
+          ownerName: existing?.ownerName ?? null,
+          ownerEmail: existing?.ownerEmail ?? "",
+          updatedAt: data.document.updated_at,
+          dirty: false,
+        });
       }
       await markGroupSynced(group);
       flushed += group.length;

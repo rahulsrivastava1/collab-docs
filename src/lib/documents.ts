@@ -5,6 +5,7 @@ export type DocumentRow = {
   id: string;
   title: string;
   content: string;
+  yjs_state: Buffer | null;
   owner_id: string;
   created_at: Date;
   updated_at: Date;
@@ -96,8 +97,61 @@ export async function createDocument(input: {
 
 export async function updateDocument(
   documentId: string,
-  input: { title?: string; content?: string },
+  input: {
+    title?: string;
+    content?: string;
+    yjsUpdateBase64?: string;
+    yjsState?: Buffer | null;
+  },
 ) {
+  // Prefer CRDT update path when provided
+  if (typeof input.yjsUpdateBase64 === "string" && input.yjsUpdateBase64) {
+    const { applyYjsUpdateToState, createYDocFromPlainText, encodeYDocState } = await import(
+      "@/lib/yjs-helpers"
+    );
+
+    const current = await query<DocumentRow>(
+      `SELECT * FROM documents WHERE id = $1 LIMIT 1`,
+      [documentId],
+    );
+    const row = current.rows[0];
+    if (!row) return null;
+
+    let state = row.yjs_state;
+    if (!state || state.length === 0) {
+      const boot = createYDocFromPlainText(row.content ?? "");
+      state = encodeYDocState(boot);
+    }
+
+    const merged = applyYjsUpdateToState(state, input.yjsUpdateBase64, row.content ?? "");
+
+    const title =
+      typeof input.title === "string"
+        ? input.title.trim() || "Untitled document"
+        : undefined;
+
+    const result = await query<DocumentRow>(
+      title
+        ? `UPDATE documents
+           SET title = $1,
+               content = $2,
+               yjs_state = $3,
+               updated_at = NOW()
+           WHERE id = $4
+           RETURNING *`
+        : `UPDATE documents
+           SET content = $1,
+               yjs_state = $2,
+               updated_at = NOW()
+           WHERE id = $3
+           RETURNING *`,
+      title
+        ? [title, merged.content, merged.state, documentId]
+        : [merged.content, merged.state, documentId],
+    );
+    return result.rows[0] ?? null;
+  }
+
   const sets: string[] = [];
   const params: unknown[] = [];
 
@@ -108,6 +162,10 @@ export async function updateDocument(
   if (typeof input.content === "string") {
     params.push(input.content);
     sets.push(`content = $${params.length}`);
+  }
+  if (input.yjsState !== undefined) {
+    params.push(input.yjsState);
+    sets.push(`yjs_state = $${params.length}`);
   }
 
   if (sets.length === 0) {

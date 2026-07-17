@@ -23,6 +23,7 @@ export type RemoteDocument = {
   updated_at: string;
   owner_name?: string | null;
   owner_email?: string;
+  yjs_state?: string | null;
 };
 
 export async function listLocalDocuments(userId: string) {
@@ -123,6 +124,7 @@ export async function saveDocumentLocally(input: {
   role: DocumentRole;
   ownerName?: string | null;
   ownerEmail?: string;
+  yjsUpdate?: string | null;
 }) {
   const now = new Date().toISOString();
   const existing = await getLocalDocument(input.userId, input.documentId);
@@ -144,7 +146,11 @@ export async function saveDocumentLocally(input: {
     userId: input.userId,
     documentId: input.documentId,
     op: existing ? "update" : "create",
-    payload: { title: next.title, content: next.content },
+    payload: {
+      title: next.title,
+      content: next.content,
+      ...(input.yjsUpdate ? { yjsUpdate: input.yjsUpdate } : {}),
+    },
   });
 
   return next;

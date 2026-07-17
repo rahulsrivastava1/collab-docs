@@ -23,6 +23,7 @@ export type OutboxItem = {
   payload: {
     title?: string;
     content?: string;
+    yjsUpdate?: string;
   };
   createdAt: string;
   status: "pending" | "synced" | "failed";

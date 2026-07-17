@@ -9,14 +9,28 @@ import { authOptions } from "@/lib/auth";
 import { SiteNav } from "@/components/SiteNav";
 import { ShareModal } from "@/components/ShareModal";
 import { ConfirmModal } from "@/components/ConfirmModal";
+import { PresenceBar, EditorTypingIndicator } from "@/components/PresenceBar";
 import { useSync } from "@/components/SyncProvider";
+import {
+  useDocumentRealtime,
+  type RemoteDocumentUpdate,
+} from "@/hooks/useDocumentRealtime";
 import { canEdit, canManageSharing, type DocumentRole } from "@/lib/acl";
+import type { PresenceMode } from "@/lib/realtime-bus";
 import {
   deleteLocalDocument,
   enqueueOutbox,
   getLocalDocument,
+  putLocalDocument,
   saveDocumentLocally,
 } from "@/lib/local-docs";
+import {
+  applyRemoteYjsState,
+  commitLocalText,
+  disposeClientYDoc,
+  loadYDocFromServerState,
+  yTextString,
+} from "@/lib/yjs-client";
 
 type DocumentPayload = {
   id: string;
@@ -27,6 +41,8 @@ type DocumentPayload = {
 };
 
 const POLL_MS = 7000;
+const POLL_FALLBACK_MS = 30_000;
+const EDITING_IDLE_MS = 3_000;
 
 export const getServerSideProps: GetServerSideProps = async (context) => {
   const session = await getServerSession(context.req, context.res, authOptions);
@@ -55,12 +71,83 @@ export default function DocumentEditorPage() {
   const [shareOpen, setShareOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [bodyFocused, setBodyFocused] = useState(false);
+  const [presenceMode, setPresenceMode] = useState<PresenceMode>("viewing");
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hydrated = useRef(false);
   const lastPersisted = useRef({ title: "", content: "" });
+  const lastTypedAt = useRef(0);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const contentRef = useRef("");
+  const bodyFocusedRef = useRef(false);
+  const caretRef = useRef<number | null>(null);
+  const presenceModeRef = useRef<PresenceMode>("viewing");
+  const titleRef = useRef("");
+  const persistLocalAndMaybeSyncRef = useRef<
+    (title: string, content: string) => Promise<void>
+  >(async () => {});
 
   const editable = canEdit(document?.role);
   const canShare = canManageSharing(document?.role);
+
+  presenceModeRef.current = presenceMode;
+  titleRef.current = title;
+
+  const markTyping = useCallback(() => {
+    lastTypedAt.current = Date.now();
+    if (editable && presenceModeRef.current !== "editing") {
+      setPresenceMode("editing");
+    }
+  }, [editable]);
+
+  const syncCaretFromTextarea = useCallback(() => {
+    const ta = textareaRef.current;
+    if (!ta) return;
+    caretRef.current = ta.selectionStart;
+  }, []);
+
+  const scheduleSave = useCallback(() => {
+    if (!hydrated.current) return;
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => {
+      const body = textareaRef.current?.value ?? contentRef.current;
+      contentRef.current = body;
+      void persistLocalAndMaybeSyncRef.current(titleRef.current, body);
+    }, 450);
+  }, []);
+
+  const readBodyContent = useCallback(() => {
+    return textareaRef.current?.value ?? contentRef.current;
+  }, []);
+
+  /** Apply text into the textarea without stealing caret while user is typing */
+  const writeBodyContent = useCallback((next: string, opts?: { force?: boolean }) => {
+    contentRef.current = next;
+    setContent(next);
+    const ta = textareaRef.current;
+    if (!ta) return;
+    if (opts?.force || !bodyFocusedRef.current) {
+      if (ta.value !== next) ta.value = next;
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!editable) {
+      setPresenceMode("viewing");
+      caretRef.current = null;
+      return;
+    }
+
+    const tick = () => {
+      const recentlyTyped = Date.now() - lastTypedAt.current < EDITING_IDLE_MS;
+      const next = bodyFocused || recentlyTyped ? "editing" : "viewing";
+      setPresenceMode((prev) => (prev === next ? prev : next));
+    };
+
+    tick();
+    const timer = setInterval(tick, 1_000);
+    return () => clearInterval(timer);
+  }, [editable, bodyFocused]);
 
   const applyFromLocal = useCallback(
     async (opts?: { forceContent?: boolean }) => {
@@ -76,17 +163,23 @@ export default function DocumentEditorPage() {
         updated_at: local.updatedAt,
       });
 
-      // Don't clobber in-progress typing; dirty means local edits win
       if (opts?.forceContent || !local.dirty) {
-        setTitle(local.title);
-        setContent(local.content);
+        setTitle((prev) => (prev === local.title ? prev : local.title));
+
+        // Never rewrite textarea value while the user is focused/typing — that jumps the caret
+        if (!bodyFocusedRef.current) {
+          writeBodyContent(local.content, { force: Boolean(opts?.forceContent) });
+        } else {
+          contentRef.current = readBodyContent();
+        }
+
         lastPersisted.current = { title: local.title, content: local.content };
       }
 
       setSaveLabel(local.dirty ? "Saved locally" : "Synced");
       return local;
     },
-    [id, userId],
+    [id, userId, writeBodyContent, readBodyContent],
   );
 
   const syncDocument = useCallback(
@@ -122,27 +215,59 @@ export default function DocumentEditorPage() {
     hydrated.current = false;
 
     try {
-      // 1) Local-first
       const local = await applyFromLocal({ forceContent: true });
       if (local) {
         hydrated.current = true;
         setLoading(false);
       }
 
-      // 2) F3: sync when opening a document
       if (!navigator.onLine) {
         if (!local) {
           setLoadError("Document unavailable offline. Connect to load it once.");
+        } else {
+          loadYDocFromServerState(id, null, local.content);
         }
         return;
       }
 
       await syncDocument({ quiet: Boolean(local) });
+
+      // Bootstrap Yjs from server state after sync
+      try {
+        const res = await fetch(`/api/documents/${id}`);
+        const data = (await res.json()) as {
+          document?: {
+            content: string;
+            yjs_state?: string | null;
+          };
+        };
+        if (data.document) {
+          loadYDocFromServerState(
+            id,
+            data.document.yjs_state,
+            data.document.content ?? local?.content ?? "",
+          );
+          // Fold any still-local dirty text into the CRDT
+          const body = readBodyContent();
+          if (body && body !== yTextString(id)) {
+            commitLocalText(id, body);
+          }
+        }
+      } catch {
+        if (local) loadYDocFromServerState(id, null, local.content);
+      }
+
       hydrated.current = true;
     } finally {
       setLoading(false);
     }
-  }, [id, userId, applyFromLocal, syncDocument]);
+  }, [id, userId, applyFromLocal, syncDocument, readBodyContent]);
+
+  useEffect(() => {
+    return () => {
+      if (id) disposeClientYDoc(id);
+    };
+  }, [id]);
 
   useEffect(() => {
     if (status === "authenticated" && id && userId) {
@@ -152,16 +277,86 @@ export default function DocumentEditorPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status, id, userId]);
 
-  // P2: poll while document is open and online
+  const onRemoteDocumentUpdated = useCallback(
+    async (remote: RemoteDocumentUpdate) => {
+      if (!id || !userId || remote.id !== id) return;
+
+      // CRDT merge: fold local typing into Y, then apply remote state
+      if (bodyFocusedRef.current || Date.now() - lastTypedAt.current < EDITING_IDLE_MS) {
+        commitLocalText(id, readBodyContent());
+      }
+
+      if (remote.yjs_state) {
+        applyRemoteYjsState(id, remote.yjs_state);
+      }
+
+      const merged = remote.yjs_state ? yTextString(id) : remote.content;
+
+      await putLocalDocument({
+        id,
+        userId,
+        title: remote.title,
+        content: merged,
+        role: document?.role ?? "viewer",
+        ownerName: session?.user?.name ?? null,
+        ownerEmail: session?.user?.email ?? "",
+        updatedAt: remote.updated_at,
+        dirty: Boolean(bodyFocusedRef.current),
+      });
+
+      if (!bodyFocusedRef.current) {
+        writeBodyContent(merged, { force: true });
+        setTitle((prev) => (prev === remote.title ? prev : remote.title));
+        lastPersisted.current = { title: remote.title, content: merged };
+        setSaveLabel("Synced");
+      }
+    },
+    [
+      id,
+      userId,
+      document?.role,
+      session?.user?.name,
+      session?.user?.email,
+      readBodyContent,
+      writeBodyContent,
+    ],
+  );
+
+  const onRemoteDocumentDeleted = useCallback(
+    async (documentId: string) => {
+      if (!id || !userId || documentId !== id) return;
+      await deleteLocalDocument(userId, id);
+      await router.push("/docs");
+    },
+    [id, userId, router],
+  );
+
+  const { peers, editingPeers, connected: realtimeConnected } = useDocumentRealtime({
+    documentId: id,
+    userId,
+    online,
+    mode: presenceMode,
+    caretRef,
+    enabled: Boolean(id && userId && status === "authenticated" && !loading && !loadError),
+    onDocumentUpdated: (doc) => {
+      void onRemoteDocumentUpdated(doc);
+    },
+    onDocumentDeleted: (documentId) => {
+      void onRemoteDocumentDeleted(documentId);
+    },
+  });
+
+  // Poll: fast when SSE down; slow safety net when connected
   useEffect(() => {
     if (!id || !userId || !online || status !== "authenticated") return;
 
+    const interval = realtimeConnected ? POLL_FALLBACK_MS : POLL_MS;
     const timer = setInterval(() => {
       void syncDocument({ quiet: true });
-    }, POLL_MS);
+    }, interval);
 
     return () => clearInterval(timer);
-  }, [id, userId, online, status, syncDocument]);
+  }, [id, userId, online, status, syncDocument, realtimeConnected]);
 
   const persistLocalAndMaybeSync = useCallback(
     async (nextTitle: string, nextContent: string) => {
@@ -176,6 +371,8 @@ export default function DocumentEditorPage() {
 
       setSaveError(null);
 
+      const { yjsUpdateBase64 } = commitLocalText(id, nextContent);
+
       await saveDocumentLocally({
         userId,
         documentId: id,
@@ -184,6 +381,7 @@ export default function DocumentEditorPage() {
         role: document.role,
         ownerName: session?.user?.name ?? null,
         ownerEmail: session?.user?.email ?? "",
+        yjsUpdate: yjsUpdateBase64,
       });
       lastPersisted.current = {
         title: nextTitle.trim() || "Untitled document",
@@ -194,7 +392,17 @@ export default function DocumentEditorPage() {
 
       if (!navigator.onLine) return;
 
-      await syncDocument({ quiet: true });
+      await syncNow({ documentId: id });
+      await refreshPendingCount();
+
+      // After sync, show merged CRDT text if server returned newer merge
+      const local = await getLocalDocument(userId, id);
+      if (local && !bodyFocusedRef.current) {
+        writeBodyContent(local.content);
+      } else if (local && local.content !== readBodyContent()) {
+        // Keep caret; optional soft update skipped while focused
+      }
+      setSaveLabel("Synced");
     },
     [
       id,
@@ -204,22 +412,19 @@ export default function DocumentEditorPage() {
       session?.user?.name,
       session?.user?.email,
       refreshPendingCount,
-      syncDocument,
+      syncNow,
+      writeBodyContent,
+      readBodyContent,
     ],
   );
 
+  persistLocalAndMaybeSyncRef.current = persistLocalAndMaybeSync;
+
+  // Title-only autosave (body saves via scheduleSave on input)
   useEffect(() => {
     if (!hydrated.current || !editable || !document) return;
-
-    if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(() => {
-      void persistLocalAndMaybeSync(title, content);
-    }, 450);
-
-    return () => {
-      if (saveTimer.current) clearTimeout(saveTimer.current);
-    };
-  }, [title, content, editable, document, persistLocalAndMaybeSync]);
+    scheduleSave();
+  }, [title, editable, document, scheduleSave]);
 
   async function onDeleteConfirm() {
     if (!id || !canShare || !userId) return;
@@ -259,14 +464,17 @@ export default function DocumentEditorPage() {
         <SiteNav />
 
         <div className="border-b border-zinc-200 bg-white">
-          <div className="mx-auto flex w-full max-w-5xl flex-col gap-3 px-6 py-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="mx-auto flex w-full max-w-5xl flex-col gap-3 px-6 py-3 sm:flex-row sm:items-start sm:justify-between">
             <div className="min-w-0 flex-1">
               <Link href="/docs" className="text-xs font-medium text-[#1a73e8] hover:underline">
                 ← All documents
               </Link>
               <input
                 value={title}
-                onChange={(e) => setTitle(e.target.value)}
+                onChange={(e) => {
+                  markTyping();
+                  setTitle(e.target.value);
+                }}
                 disabled={!editable}
                 className="mt-1 block w-full truncate border-0 bg-transparent p-0 text-xl font-semibold text-zinc-900 outline-none disabled:text-zinc-700"
                 placeholder="Untitled document"
@@ -278,9 +486,10 @@ export default function DocumentEditorPage() {
                 {saveError ? ` · ${saveError}` : null}
               </p>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-col items-stretch gap-2 sm:items-end">
+              <PresenceBar peers={peers} connected={realtimeConnected} />
               {canShare ? (
-                <>
+                <div className="flex items-center justify-end gap-2">
                   <button
                     type="button"
                     onClick={() => setShareOpen(true)}
@@ -297,7 +506,7 @@ export default function DocumentEditorPage() {
                   >
                     Delete
                   </button>
-                </>
+                </div>
               ) : null}
             </div>
           </div>
@@ -311,15 +520,41 @@ export default function DocumentEditorPage() {
               {loadError}
             </p>
           ) : (
-            <textarea
-              value={content}
-              onChange={(e) => setContent(e.target.value)}
-              readOnly={!editable}
-              placeholder={
-                editable ? "Start typing…" : "You have view-only access to this document."
-              }
-              className="min-h-[70vh] w-full resize-y rounded-2xl border border-zinc-200 bg-white p-6 text-[15px] leading-7 text-zinc-900 shadow-sm outline-none focus:border-[#1a73e8] focus:ring-2 focus:ring-[#1a73e8]/20 disabled:bg-zinc-50"
-            />
+            <div className="relative">
+              <EditorTypingIndicator
+                editingPeers={editingPeers}
+                textareaRef={textareaRef}
+              />
+              <textarea
+                key={id}
+                ref={textareaRef}
+                defaultValue={content}
+                onChange={(e) => {
+                  contentRef.current = e.target.value;
+                  caretRef.current = e.target.selectionStart;
+                  markTyping();
+                  scheduleSave();
+                }}
+                onSelect={syncCaretFromTextarea}
+                onKeyUp={syncCaretFromTextarea}
+                onClick={syncCaretFromTextarea}
+                onFocus={() => {
+                  bodyFocusedRef.current = true;
+                  setBodyFocused(true);
+                  syncCaretFromTextarea();
+                }}
+                onBlur={() => {
+                  bodyFocusedRef.current = false;
+                  setBodyFocused(false);
+                  contentRef.current = textareaRef.current?.value ?? contentRef.current;
+                }}
+                readOnly={!editable}
+                placeholder={
+                  editable ? "Start typing…" : "You have view-only access to this document."
+                }
+                className="min-h-[70vh] w-full resize-y rounded-2xl border border-zinc-200 bg-white p-6 text-[15px] leading-7 text-zinc-900 shadow-sm outline-none focus:border-[#1a73e8] focus:ring-2 focus:ring-[#1a73e8]/20 disabled:bg-zinc-50"
+              />
+            </div>
           )}
         </main>
       </div>
