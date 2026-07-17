@@ -7,7 +7,14 @@ import type { GetServerSideProps } from "next";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { SiteNav } from "@/components/SiteNav";
+import { useSync } from "@/components/SyncProvider";
 import type { DocumentRole } from "@/lib/acl";
+import {
+  enqueueOutbox,
+  listLocalDocuments,
+  putLocalDocument,
+  toDocCard,
+} from "@/lib/local-docs";
 
 type DocCard = {
   id: string;
@@ -45,51 +52,106 @@ export const getServerSideProps: GetServerSideProps = async (context) => {
 
 export default function DocsPage() {
   const router = useRouter();
-  const { status } = useSession();
+  const { data: session, status } = useSession();
+  const { online, syncNow, refreshPendingCount } = useSync();
+  const userId = session?.user?.id ?? "";
+
   const [documents, setDocuments] = useState<DocCard[]>([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const refreshFromLocal = useCallback(async () => {
+    if (!userId) return;
+    const local = await listLocalDocuments(userId);
+    setDocuments(local.map(toDocCard));
+  }, [userId]);
+
   const loadDocs = useCallback(async () => {
-    setLoading(true);
+    if (!userId) return;
     setError(null);
-    try {
-      const res = await fetch("/api/documents");
-      const data = (await res.json()) as { documents?: DocCard[]; error?: string };
-      if (!res.ok) {
-        setError(data.error ?? "Could not load documents");
-        return;
-      }
-      setDocuments(data.documents ?? []);
-    } finally {
-      setLoading(false);
+
+    // 1) Local-first
+    await refreshFromLocal();
+    setLoading(false);
+
+    // 2) F3: sync on opening /docs (flush outbox, then pull)
+    if (navigator.onLine) {
+      await syncNow();
+      await refreshFromLocal();
+      await refreshPendingCount();
     }
-  }, []);
+  }, [userId, refreshFromLocal, syncNow, refreshPendingCount]);
 
   useEffect(() => {
-    if (status === "authenticated") {
+    if (status === "authenticated" && userId) {
       void loadDocs();
     }
-  }, [status, loadDocs]);
+  }, [status, userId, loadDocs]);
 
   async function createDocument() {
+    if (!userId) return;
     setCreating(true);
     setError(null);
+
     try {
+      if (!online) {
+        const id = crypto.randomUUID();
+        const now = new Date().toISOString();
+        await putLocalDocument({
+          id,
+          userId,
+          title: "Untitled document",
+          content: "",
+          role: "owner",
+          ownerName: session?.user?.name ?? null,
+          ownerEmail: session?.user?.email ?? "",
+          updatedAt: now,
+          dirty: true,
+        });
+        await enqueueOutbox({
+          userId,
+          documentId: id,
+          op: "create",
+          payload: { title: "Untitled document", content: "" },
+        });
+        await refreshPendingCount();
+        await router.push(`/docs/${id}`);
+        return;
+      }
+
       const res = await fetch("/api/documents", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ title: "Untitled document" }),
       });
       const data = (await res.json()) as {
-        document?: { id: string };
+        document?: {
+          id: string;
+          title: string;
+          content: string;
+          role: DocumentRole;
+          updated_at: string;
+        };
         error?: string;
       };
       if (!res.ok || !data.document) {
         setError(data.error ?? "Could not create document");
         return;
       }
+
+      await putLocalDocument({
+        id: data.document.id,
+        userId,
+        title: data.document.title,
+        content: data.document.content ?? "",
+        role: data.document.role,
+        ownerName: session?.user?.name ?? null,
+        ownerEmail: session?.user?.email ?? "",
+        updatedAt: data.document.updated_at,
+        dirty: false,
+      });
+
       await router.push(`/docs/${data.document.id}`);
     } finally {
       setCreating(false);
@@ -108,7 +170,7 @@ export default function DocsPage() {
             <div>
               <h1 className="text-3xl font-semibold tracking-tight">Documents</h1>
               <p className="mt-1 text-sm text-zinc-600">
-                Create, open, and share collaborative documents.
+                Local-first with background sync — edits go to this device first, then the server.
               </p>
             </div>
             <button

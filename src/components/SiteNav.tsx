@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { useRouter } from "next/router";
 import { signOut, useSession } from "next-auth/react";
+import { ConnectionStatus } from "@/components/ConnectionStatus";
 
 const SITE_NAME = "Google Docs Clone";
 
@@ -25,7 +26,7 @@ export function SiteNav({ compact = false }: SiteNavProps) {
   return (
     <header className="sticky top-0 z-40 border-b border-zinc-200 bg-white">
       <div
-        className={`mx-auto flex w-full items-center justify-between px-6 ${
+        className={`mx-auto flex w-full items-center justify-between gap-3 px-6 ${
           compact ? "max-w-lg py-3" : "max-w-5xl py-3"
         }`}
       >
@@ -38,11 +39,12 @@ export function SiteNav({ compact = false }: SiteNavProps) {
           </span>
         </Link>
 
-        <nav className="flex items-center gap-3">
+        <nav className="flex flex-wrap items-center justify-end gap-2 sm:gap-3">
           {status === "loading" ? (
             <span className="text-sm text-zinc-500">Loading…</span>
           ) : session?.user ? (
             <>
+              <ConnectionStatus />
               <Link
                 href="/docs"
                 className={

@@ -9,7 +9,14 @@ import { authOptions } from "@/lib/auth";
 import { SiteNav } from "@/components/SiteNav";
 import { ShareModal } from "@/components/ShareModal";
 import { ConfirmModal } from "@/components/ConfirmModal";
+import { useSync } from "@/components/SyncProvider";
 import { canEdit, canManageSharing, type DocumentRole } from "@/lib/acl";
+import {
+  deleteLocalDocument,
+  enqueueOutbox,
+  getLocalDocument,
+  saveDocumentLocally,
+} from "@/lib/local-docs";
 
 type DocumentPayload = {
   id: string;
@@ -18,6 +25,8 @@ type DocumentPayload = {
   role: DocumentRole;
   updated_at: string;
 };
+
+const POLL_MS = 7000;
 
 export const getServerSideProps: GetServerSideProps = async (context) => {
   const session = await getServerSession(context.req, context.res, authOptions);
@@ -31,14 +40,16 @@ export const getServerSideProps: GetServerSideProps = async (context) => {
 
 export default function DocumentEditorPage() {
   const router = useRouter();
-  const { status } = useSession();
+  const { data: session, status } = useSession();
+  const { online, syncNow, refreshPendingCount } = useSync();
+  const userId = session?.user?.id ?? "";
   const id = typeof router.query.id === "string" ? router.query.id : "";
 
   const [document, setDocument] = useState<DocumentPayload | null>(null);
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
+  const [saveLabel, setSaveLabel] = useState<string>("");
   const [saveError, setSaveError] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [shareOpen, setShareOpen] = useState(false);
@@ -46,68 +57,155 @@ export default function DocumentEditorPage() {
   const [deleting, setDeleting] = useState(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hydrated = useRef(false);
+  const lastPersisted = useRef({ title: "", content: "" });
 
   const editable = canEdit(document?.role);
   const canShare = canManageSharing(document?.role);
 
+  const applyFromLocal = useCallback(
+    async (opts?: { forceContent?: boolean }) => {
+      if (!id || !userId) return null;
+      const local = await getLocalDocument(userId, id);
+      if (!local) return null;
+
+      setDocument({
+        id: local.id,
+        title: local.title,
+        content: local.content,
+        role: local.role,
+        updated_at: local.updatedAt,
+      });
+
+      // Don't clobber in-progress typing; dirty means local edits win
+      if (opts?.forceContent || !local.dirty) {
+        setTitle(local.title);
+        setContent(local.content);
+        lastPersisted.current = { title: local.title, content: local.content };
+      }
+
+      setSaveLabel(local.dirty ? "Saved locally" : "Synced");
+      return local;
+    },
+    [id, userId],
+  );
+
+  const syncDocument = useCallback(
+    async (opts?: { quiet?: boolean }) => {
+      if (!id || !userId) return;
+
+      const result = await syncNow({ documentId: id });
+      if (!result) return;
+
+      const newId = result.remapped[id];
+      if (newId && newId !== id) {
+        await router.replace(`/docs/${newId}`);
+        return;
+      }
+
+      const local = await applyFromLocal();
+      if (!local && !opts?.quiet) {
+        setLoadError("Document not found after sync.");
+      }
+      if (result.status === "error" && result.error) {
+        setSaveError(result.error);
+      } else if (result.status === "synced") {
+        setSaveError(null);
+      }
+    },
+    [id, userId, syncNow, applyFromLocal, router],
+  );
+
   const loadDocument = useCallback(async () => {
-    if (!id) return;
+    if (!id || !userId) return;
     setLoading(true);
     setLoadError(null);
     hydrated.current = false;
+
     try {
-      const res = await fetch(`/api/documents/${id}`);
-      const data = (await res.json()) as {
-        document?: DocumentPayload;
-        error?: string;
-      };
-      if (!res.ok || !data.document) {
-        setLoadError(data.error ?? "Document not found");
-        setDocument(null);
+      // 1) Local-first
+      const local = await applyFromLocal({ forceContent: true });
+      if (local) {
+        hydrated.current = true;
+        setLoading(false);
+      }
+
+      // 2) F3: sync when opening a document
+      if (!navigator.onLine) {
+        if (!local) {
+          setLoadError("Document unavailable offline. Connect to load it once.");
+        }
         return;
       }
-      setDocument(data.document);
-      setTitle(data.document.title);
-      setContent(data.document.content);
+
+      await syncDocument({ quiet: Boolean(local) });
       hydrated.current = true;
     } finally {
       setLoading(false);
     }
-  }, [id]);
+  }, [id, userId, applyFromLocal, syncDocument]);
 
   useEffect(() => {
-    if (status === "authenticated" && id) {
+    if (status === "authenticated" && id && userId) {
       void loadDocument();
     }
-  }, [status, id, loadDocument]);
+    // Intentionally depend on route/session identity only — avoid reload loops
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status, id, userId]);
 
-  const saveDocument = useCallback(
+  // P2: poll while document is open and online
+  useEffect(() => {
+    if (!id || !userId || !online || status !== "authenticated") return;
+
+    const timer = setInterval(() => {
+      void syncDocument({ quiet: true });
+    }, POLL_MS);
+
+    return () => clearInterval(timer);
+  }, [id, userId, online, status, syncDocument]);
+
+  const persistLocalAndMaybeSync = useCallback(
     async (nextTitle: string, nextContent: string) => {
-      if (!id || !editable) return;
-      setSaving(true);
-      setSaveError(null);
-      try {
-        const res = await fetch(`/api/documents/${id}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ title: nextTitle, content: nextContent }),
-        });
-        const data = (await res.json()) as {
-          document?: DocumentPayload;
-          error?: string;
-        };
-        if (!res.ok) {
-          setSaveError(data.error ?? "Could not save");
-          return;
-        }
-        if (data.document) {
-          setDocument(data.document);
-        }
-      } finally {
-        setSaving(false);
+      if (!id || !userId || !editable || !document) return;
+
+      if (
+        nextTitle === lastPersisted.current.title &&
+        nextContent === lastPersisted.current.content
+      ) {
+        return;
       }
+
+      setSaveError(null);
+
+      await saveDocumentLocally({
+        userId,
+        documentId: id,
+        title: nextTitle,
+        content: nextContent,
+        role: document.role,
+        ownerName: session?.user?.name ?? null,
+        ownerEmail: session?.user?.email ?? "",
+      });
+      lastPersisted.current = {
+        title: nextTitle.trim() || "Untitled document",
+        content: nextContent,
+      };
+      setSaveLabel("Saved locally");
+      await refreshPendingCount();
+
+      if (!navigator.onLine) return;
+
+      await syncDocument({ quiet: true });
     },
-    [id, editable],
+    [
+      id,
+      userId,
+      editable,
+      document,
+      session?.user?.name,
+      session?.user?.email,
+      refreshPendingCount,
+      syncDocument,
+    ],
   );
 
   useEffect(() => {
@@ -115,37 +213,37 @@ export default function DocumentEditorPage() {
 
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => {
-      void saveDocument(title, content);
-    }, 700);
+      void persistLocalAndMaybeSync(title, content);
+    }, 450);
 
     return () => {
       if (saveTimer.current) clearTimeout(saveTimer.current);
     };
-  }, [title, content, editable, document, saveDocument]);
+  }, [title, content, editable, document, persistLocalAndMaybeSync]);
 
   async function onDeleteConfirm() {
-    if (!id || !canShare) return;
+    if (!id || !canShare || !userId) return;
 
     setDeleting(true);
     setSaveError(null);
 
     try {
-      const res = await fetch(`/api/documents/${id}`, { method: "DELETE" });
-      if (!res.ok && res.status !== 204) {
-        let message = "Could not delete";
-        try {
-          const data = (await res.json()) as { error?: string };
-          message = data.error ?? message;
-        } catch {
-          // ignore
+      await deleteLocalDocument(userId, id);
+      await enqueueOutbox({ userId, documentId: id, op: "delete" });
+      await refreshPendingCount();
+
+      if (navigator.onLine) {
+        const result = await syncNow({ documentId: id });
+        if (result?.status === "error") {
+          setSaveError(result.error ?? "Could not delete on server");
+          setDeleteOpen(false);
+          return;
         }
-        setSaveError(message);
-        setDeleteOpen(false);
-        return;
       }
+
       await router.push("/docs");
     } catch {
-      setSaveError("Network error. Please try again.");
+      setSaveError("Could not delete. Please try again.");
       setDeleteOpen(false);
     } finally {
       setDeleting(false);
@@ -175,7 +273,9 @@ export default function DocumentEditorPage() {
               />
               <p className="mt-0.5 text-xs text-zinc-500">
                 {document ? `Your role: ${document.role}` : null}
-                {saving ? " · Saving…" : saveError ? ` · ${saveError}` : " · Saved"}
+                {saveLabel ? ` · ${saveLabel}` : null}
+                {!online ? " · Offline edits stay on this device" : null}
+                {saveError ? ` · ${saveError}` : null}
               </p>
             </div>
             <div className="flex items-center gap-2">
@@ -185,6 +285,8 @@ export default function DocumentEditorPage() {
                     type="button"
                     onClick={() => setShareOpen(true)}
                     className="btn btn-primary"
+                    disabled={!online}
+                    title={!online ? "Share requires network" : undefined}
                   >
                     Share
                   </button>
