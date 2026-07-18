@@ -1,6 +1,8 @@
 import * as Y from "yjs";
+import { MAX_CONTENT_LENGTH, MAX_YJS_UPDATE_BYTES } from "@/lib/api-security";
 
 const TEXT_KEY = "content";
+const MAX_YJS_STATE_BYTES = MAX_YJS_UPDATE_BYTES * 2;
 
 export function createYDocFromPlainText(text: string) {
   const doc = new Y.Doc();
@@ -34,13 +36,28 @@ export function applyYjsUpdateToState(
   updateBase64: string,
   fallbackText = "",
 ) {
-  const doc = yDocFromState(existingState, fallbackText);
   const update = Buffer.from(updateBase64, "base64");
+  if (update.length > MAX_YJS_UPDATE_BYTES) {
+    throw new Error(`Yjs update exceeds ${MAX_YJS_UPDATE_BYTES} bytes`);
+  }
+
+  const doc = yDocFromState(existingState, fallbackText);
   Y.applyUpdate(doc, new Uint8Array(update));
+
+  const content = yDocToPlainText(doc);
+  if (content.length > MAX_CONTENT_LENGTH) {
+    throw new Error(`Document content exceeds ${MAX_CONTENT_LENGTH} characters`);
+  }
+
+  const state = encodeYDocState(doc);
+  if (state.length > MAX_YJS_STATE_BYTES) {
+    throw new Error(`Yjs state exceeds ${MAX_YJS_STATE_BYTES} bytes`);
+  }
+
   return {
-    state: encodeYDocState(doc),
-    content: yDocToPlainText(doc),
-    stateBase64: Buffer.from(Y.encodeStateAsUpdate(doc)).toString("base64"),
+    state,
+    content,
+    stateBase64: state.toString("base64"),
   };
 }
 

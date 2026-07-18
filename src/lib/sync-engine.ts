@@ -121,7 +121,11 @@ export async function flushOutbox(
                     yjsUpdate,
                     yjsGeneration: latestUpdate?.payload.yjsGeneration ?? 1,
                   }
-                : { title, content },
+                : {
+                    title,
+                    content,
+                    yjsGeneration: latestUpdate?.payload.yjsGeneration ?? 1,
+                  },
             ),
           });
           if (!patchRes.ok) {
@@ -201,6 +205,7 @@ export async function flushOutbox(
             : {
                 title: latestUpdate.payload.title,
                 content: latestUpdate.payload.content,
+                yjsGeneration: latestUpdate.payload.yjsGeneration ?? 1,
               },
         ),
       });

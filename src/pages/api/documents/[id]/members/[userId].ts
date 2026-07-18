@@ -1,22 +1,33 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { requireUser } from "@/lib/api-auth";
-import { canManageSharing, canRead, isDocumentRole } from "@/lib/acl";
+import { canManageSharing, canRead } from "@/lib/acl";
 import {
   getDocumentForUser,
   removeDocumentMember,
   updateMemberRole,
 } from "@/lib/documents";
+import {
+  enforceRateLimit,
+  parseBody,
+  parseUuidParam,
+  requireSameOrigin,
+  updateMemberSchema,
+} from "@/lib/api-security";
+
+export const config = {
+  api: {
+    bodyParser: { sizeLimit: "2kb" },
+  },
+};
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   const user = await requireUser(req, res);
   if (!user) return;
 
-  const documentId = String(req.query.id ?? "");
-  const memberUserId = String(req.query.userId ?? "");
-
-  if (!documentId || !memberUserId) {
-    return res.status(400).json({ error: "Document id and member id are required" });
-  }
+  const documentId = parseUuidParam(req.query.id, "Document id", res);
+  if (!documentId) return;
+  const memberUserId = parseUuidParam(req.query.userId, "Member id", res);
+  if (!memberUserId) return;
 
   const document = await getDocumentForUser(documentId, user.id);
   if (!document || !canRead(document.role)) {
@@ -26,17 +37,25 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   if (!canManageSharing(document.role)) {
     return res.status(403).json({ error: "Only the owner can manage members" });
   }
+  if (!requireSameOrigin(req, res)) return;
+  if (
+    !enforceRateLimit(res, {
+      scope: `manage-member:${documentId}`,
+      identity: user.id,
+      limit: 30,
+      windowMs: 60_000,
+    })
+  ) return;
 
   if (req.method === "PATCH") {
-    const role = req.body?.role;
-    if (!isDocumentRole(role) || role === "owner") {
-      return res.status(400).json({ error: "Role must be editor or viewer" });
-    }
+    const body = parseBody(updateMemberSchema, req, res);
+    if (!body) return;
 
     const updated = await updateMemberRole({
       documentId,
       userId: memberUserId,
-      role,
+      role: body.role,
+      actorId: user.id,
     });
 
     if (!updated) {
@@ -47,7 +66,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   if (req.method === "DELETE") {
-    const removed = await removeDocumentMember(documentId, memberUserId);
+    const removed = await removeDocumentMember(documentId, memberUserId, user.id);
     if (!removed) {
       return res.status(404).json({ error: "Member not found or is the owner" });
     }

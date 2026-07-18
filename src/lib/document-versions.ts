@@ -15,7 +15,11 @@ export type DocumentVersionRow = {
   author_email: string | null;
 };
 
-export async function listDocumentVersions(documentId: string) {
+export async function listDocumentVersions(
+  documentId: string,
+  userId: string,
+  limit = 20,
+) {
   const result = await query<DocumentVersionRow>(
     `SELECT
        dv.*,
@@ -24,8 +28,14 @@ export async function listDocumentVersions(documentId: string) {
      FROM document_versions dv
      LEFT JOIN users u ON u.id = dv.created_by
      WHERE dv.document_id = $1
-     ORDER BY dv.created_at DESC`,
-    [documentId],
+       AND EXISTS (
+         SELECT 1 FROM document_members dm
+         WHERE dm.document_id = dv.document_id
+           AND dm.user_id = $2
+       )
+     ORDER BY dv.created_at DESC
+     LIMIT $3`,
+    [documentId, userId, limit],
   );
   return result.rows;
 }
@@ -55,6 +65,12 @@ export async function createDocumentVersionIfDue(
        SELECT d.id, d.title, d.content, d.yjs_state, d.yjs_generation, $2
        FROM documents d
        WHERE d.id = $1
+         AND EXISTS (
+           SELECT 1 FROM document_members dm
+           WHERE dm.document_id = d.id
+             AND dm.user_id = $2
+             AND dm.role IN ('owner', 'editor')
+         )
          AND NOT EXISTS (
            SELECT 1
            FROM document_versions dv
@@ -92,8 +108,14 @@ export async function restoreDocumentVersion(input: {
        FROM document_versions dv
        LEFT JOIN users u ON u.id = dv.created_by
        WHERE dv.id = $1 AND dv.document_id = $2
+         AND EXISTS (
+           SELECT 1 FROM document_members dm
+           WHERE dm.document_id = dv.document_id
+             AND dm.user_id = $3
+             AND dm.role IN ('owner', 'editor')
+         )
        LIMIT 1`,
-      [input.versionId, input.documentId],
+      [input.versionId, input.documentId, input.actorId],
     );
     const version = versionResult.rows[0];
     if (!version) {
@@ -123,12 +145,19 @@ export async function restoreDocumentVersion(input: {
            yjs_generation = yjs_generation + 1,
            updated_at = NOW()
        WHERE id = $1
+         AND EXISTS (
+           SELECT 1 FROM document_members dm
+           WHERE dm.document_id = documents.id
+             AND dm.user_id = $5
+             AND dm.role IN ('owner', 'editor')
+         )
        RETURNING *`,
       [
         input.documentId,
         version.title,
         version.content,
         freshState,
+        input.actorId,
       ],
     );
     const document = documentResult.rows[0];

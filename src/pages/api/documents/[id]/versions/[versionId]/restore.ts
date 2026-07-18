@@ -5,6 +5,17 @@ import { getDocumentForUser } from "@/lib/documents";
 import { restoreDocumentVersion } from "@/lib/document-versions";
 import { broadcast } from "@/lib/realtime-bus";
 import { stateToBase64 } from "@/lib/yjs-helpers";
+import {
+  enforceRateLimit,
+  parseUuidParam,
+  requireSameOrigin,
+} from "@/lib/api-security";
+
+export const config = {
+  api: {
+    bodyParser: { sizeLimit: "1kb" },
+  },
+};
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "POST") {
@@ -15,8 +26,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const user = await requireUser(req, res);
   if (!user) return;
 
-  const documentId = String(req.query.id ?? "");
-  const versionId = String(req.query.versionId ?? "");
+  const documentId = parseUuidParam(req.query.id, "Document id", res);
+  if (!documentId) return;
+  const versionId = parseUuidParam(req.query.versionId, "Version id", res);
+  if (!versionId) return;
   const current = await getDocumentForUser(documentId, user.id);
   if (!current || !canRead(current.role)) {
     return res.status(404).json({ error: "Document not found" });
@@ -26,6 +39,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       error: "Only owners and editors can restore versions",
     });
   }
+  if (!requireSameOrigin(req, res)) return;
+  if (
+    !enforceRateLimit(res, {
+      scope: `restore-version:${documentId}`,
+      identity: user.id,
+      limit: 10,
+      windowMs: 60_000,
+    })
+  ) return;
 
   const restored = await restoreDocumentVersion({
     documentId,

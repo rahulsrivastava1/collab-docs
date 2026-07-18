@@ -13,6 +13,20 @@ import {
 import { broadcast } from "@/lib/realtime-bus";
 import { createDocumentVersionIfDue } from "@/lib/document-versions";
 import { stateToBase64 } from "@/lib/yjs-helpers";
+import {
+  enforceRateLimit,
+  parseBody,
+  parseUuidParam,
+  requireSameOrigin,
+  updateDocumentSchema,
+} from "@/lib/api-security";
+
+export const config = {
+  api: {
+    bodyParser: { sizeLimit: "768kb" },
+    responseLimit: "2mb",
+  },
+};
 
 function serializeDocument(
   doc: {
@@ -46,10 +60,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const user = await requireUser(req, res);
   if (!user) return;
 
-  const id = String(req.query.id ?? "");
-  if (!id) {
-    return res.status(400).json({ error: "Document id is required" });
-  }
+  const id = parseUuidParam(req.query.id, "Document id", res);
+  if (!id) return;
 
   const document = await getDocumentForUser(id, user.id);
   if (!document || !canRead(document.role)) {
@@ -67,28 +79,49 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(403).json({ error: "You do not have edit access" });
     }
 
-    const title = typeof req.body?.title === "string" ? req.body.title : undefined;
-    const content =
-      typeof req.body?.content === "string" ? req.body.content : undefined;
-    const yjsUpdate =
-      typeof req.body?.yjsUpdate === "string" ? req.body.yjsUpdate : undefined;
-    const yjsGeneration =
-      typeof req.body?.yjsGeneration === "number"
-        ? req.body.yjsGeneration
-        : document.yjs_generation;
+    if (!requireSameOrigin(req, res)) return;
+    if (
+      !enforceRateLimit(res, {
+        scope: `update-document:${id}`,
+        identity: user.id,
+        limit: 120,
+        windowMs: 60_000,
+      })
+    ) return;
 
-    if (yjsUpdate && yjsGeneration !== document.yjs_generation) {
+    const body = parseBody(updateDocumentSchema, req, res);
+    if (!body) return;
+    const { title, content, yjsUpdate } = body;
+    const touchesContent = content !== undefined || yjsUpdate !== undefined;
+
+    if (
+      touchesContent &&
+      body.yjsGeneration !== document.yjs_generation
+    ) {
       return res.status(409).json({
         error: "Document was restored. Refresh before syncing older edits.",
         document: serializeDocument(document, document.role),
       });
     }
 
-    const updated = await updateDocument(id, {
-      title,
-      content: yjsUpdate ? undefined : content,
-      yjsUpdateBase64: yjsUpdate,
-    });
+    let updated;
+    try {
+      updated = await updateDocument(id, user.id, {
+        title,
+        content: yjsUpdate ? undefined : content,
+        yjsUpdateBase64: yjsUpdate,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Invalid document update";
+      if (
+        message.includes("exceeds") ||
+        message.includes("Yjs update") ||
+        message.includes("Document content")
+      ) {
+        return res.status(413).json({ error: message });
+      }
+      throw error;
+    }
     const payload = updated
       ? serializeDocument(updated, document.role)
       : serializeDocument(document, document.role);
@@ -120,7 +153,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (!canDeleteDocument(document.role)) {
       return res.status(403).json({ error: "Only the owner can delete this document" });
     }
-    await deleteDocument(id);
+    if (!requireSameOrigin(req, res)) return;
+    if (
+      !enforceRateLimit(res, {
+        scope: "delete-document",
+        identity: user.id,
+        limit: 10,
+        windowMs: 60_000,
+      })
+    ) return;
+    await deleteDocument(id, user.id);
     broadcast(id, { type: "document_deleted", documentId: id }, user.id);
     return res.status(204).end();
   }

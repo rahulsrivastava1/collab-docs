@@ -3,8 +3,6 @@ import { requireUser } from "@/lib/api-auth";
 import {
   canManageSharing,
   canRead,
-  isDocumentRole,
-  type DocumentRole,
 } from "@/lib/acl";
 import {
   getDocumentForUser,
@@ -12,17 +10,27 @@ import {
   upsertDocumentMember,
 } from "@/lib/documents";
 import { findUserByEmail } from "@/lib/users";
+import {
+  enforceRateLimit,
+  inviteMemberSchema,
+  parseBody,
+  parseUuidParam,
+  requireSameOrigin,
+} from "@/lib/api-security";
+
+export const config = {
+  api: {
+    bodyParser: { sizeLimit: "4kb" },
+  },
+};
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   try {
     const user = await requireUser(req, res);
     if (!user) return;
 
-    const documentId = String(req.query.id ?? "");
-    if (!documentId) {
-      res.status(400).json({ error: "Document id is required" });
-      return;
-    }
+    const documentId = parseUuidParam(req.query.id, "Document id", res);
+    if (!documentId) return;
 
     const document = await getDocumentForUser(documentId, user.id);
     if (!document || !canRead(document.role)) {
@@ -41,20 +49,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         res.status(403).json({ error: "Only the owner can share this document" });
         return;
       }
+      if (!requireSameOrigin(req, res)) return;
+      if (
+        !enforceRateLimit(res, {
+          scope: `invite-member:${documentId}`,
+          identity: user.id,
+          limit: 30,
+          windowMs: 60_000,
+        })
+      ) return;
 
-      const email =
-        typeof req.body?.email === "string" ? req.body.email.trim().toLowerCase() : "";
-      const role = req.body?.role as DocumentRole;
-
-      if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-        res.status(400).json({ error: "A valid email is required" });
-        return;
-      }
-
-      if (!isDocumentRole(role) || role === "owner") {
-        res.status(400).json({ error: "Role must be editor or viewer" });
-        return;
-      }
+      const body = parseBody(inviteMemberSchema, req, res);
+      if (!body) return;
+      const { email, role } = body;
 
       const invitee = await findUserByEmail(email);
       if (!invitee) {
@@ -79,6 +86,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         documentId,
         userId: invitee.id,
         role,
+        actorId: user.id,
       });
 
       res.status(200).json({ member });

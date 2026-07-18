@@ -54,13 +54,17 @@ export async function upsertGoogleUser(input: {
   email: string;
   image?: string | null;
 }) {
+  // Google proves email ownership. Clear any password that may have been set by
+  // an earlier unverified credentials registration for the same address so an
+  // attacker cannot keep password access after the real owner signs in with Google.
   const result = await query<UserRow>(
     `INSERT INTO users (name, email, image, email_verified)
      VALUES ($1, $2, $3, NOW())
      ON CONFLICT (email) DO UPDATE SET
        name = COALESCE(EXCLUDED.name, users.name),
        image = COALESCE(EXCLUDED.image, users.image),
-       email_verified = COALESCE(users.email_verified, NOW()),
+       email_verified = NOW(),
+       password_hash = NULL,
        updated_at = NOW()
      RETURNING *`,
     [input.name ?? null, input.email.toLowerCase(), input.image ?? null],

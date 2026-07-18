@@ -3,6 +3,7 @@ import { requireUser } from "@/lib/api-auth";
 import { canRead } from "@/lib/acl";
 import { getDocumentForUser } from "@/lib/documents";
 import { listDocumentVersions } from "@/lib/document-versions";
+import { parseUuidParam } from "@/lib/api-security";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "GET") {
@@ -13,13 +14,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const user = await requireUser(req, res);
   if (!user) return;
 
-  const documentId = String(req.query.id ?? "");
+  const documentId = parseUuidParam(req.query.id, "Document id", res);
+  if (!documentId) return;
   const document = await getDocumentForUser(documentId, user.id);
   if (!document || !canRead(document.role)) {
     return res.status(404).json({ error: "Document not found" });
   }
 
-  const rows = await listDocumentVersions(documentId);
+  const rows = await listDocumentVersions(documentId, user.id);
   const versions = rows.map((version) => ({
     id: version.id,
     title: version.title,

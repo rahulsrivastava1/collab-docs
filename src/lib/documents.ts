@@ -98,6 +98,7 @@ export async function createDocument(input: {
 
 export async function updateDocument(
   documentId: string,
+  actorId: string,
   input: {
     title?: string;
     content?: string;
@@ -116,8 +117,14 @@ export async function updateDocument(
 
       // Serialize concurrent CRDT merges so no update can overwrite another.
       const current = await client.query<DocumentRow>(
-        `SELECT * FROM documents WHERE id = $1 FOR UPDATE`,
-        [documentId],
+        `SELECT d.*
+         FROM documents d
+         JOIN document_members dm ON dm.document_id = d.id
+         WHERE d.id = $1
+           AND dm.user_id = $2
+           AND dm.role IN ('owner', 'editor')
+         FOR UPDATE OF d`,
+        [documentId, actorId],
       );
       const row = current.rows[0];
       if (!row) {
@@ -194,19 +201,40 @@ export async function updateDocument(
 
   sets.push("updated_at = NOW()");
   params.push(documentId);
+  const documentIdParam = params.length;
+  params.push(actorId);
+  const actorIdParam = params.length;
 
   const result = await query<DocumentRow>(
     `UPDATE documents
      SET ${sets.join(", ")}
-     WHERE id = $${params.length}
+     WHERE id = $${documentIdParam}
+       AND EXISTS (
+         SELECT 1
+         FROM document_members dm
+         WHERE dm.document_id = documents.id
+           AND dm.user_id = $${actorIdParam}
+           AND dm.role IN ('owner', 'editor')
+       )
      RETURNING *`,
     params,
   );
   return result.rows[0] ?? null;
 }
 
-export async function deleteDocument(documentId: string) {
-  await query(`DELETE FROM documents WHERE id = $1`, [documentId]);
+export async function deleteDocument(documentId: string, actorId: string) {
+  await query(
+    `DELETE FROM documents d
+     WHERE d.id = $1
+       AND EXISTS (
+         SELECT 1
+         FROM document_members dm
+         WHERE dm.document_id = d.id
+           AND dm.user_id = $2
+           AND dm.role = 'owner'
+       )`,
+    [documentId, actorId],
+  );
 }
 
 export async function listDocumentMembers(documentId: string) {
@@ -231,6 +259,7 @@ export async function upsertDocumentMember(input: {
   documentId: string;
   userId: string;
   role: DocumentRole;
+  actorId: string;
 }) {
   if (input.role === "owner") {
     throw new Error("Cannot assign owner via invite");
@@ -238,11 +267,17 @@ export async function upsertDocumentMember(input: {
 
   await query(
     `INSERT INTO document_members (document_id, user_id, role)
-     VALUES ($1, $2, $3)
+     SELECT $1, $2, $3
+     WHERE EXISTS (
+       SELECT 1 FROM document_members owner_membership
+       WHERE owner_membership.document_id = $1
+         AND owner_membership.user_id = $4
+         AND owner_membership.role = 'owner'
+     )
      ON CONFLICT (document_id, user_id) DO UPDATE SET
        role = EXCLUDED.role,
        updated_at = NOW()`,
-    [input.documentId, input.userId, input.role],
+    [input.documentId, input.userId, input.role, input.actorId],
   );
 
   const result = await query<DocumentMemberRow>(
@@ -261,6 +296,7 @@ export async function updateMemberRole(input: {
   documentId: string;
   userId: string;
   role: Exclude<DocumentRole, "owner">;
+  actorId: string;
 }) {
   const result = await query(
     `UPDATE document_members
@@ -268,20 +304,36 @@ export async function updateMemberRole(input: {
      WHERE document_id = $1
        AND user_id = $2
        AND role <> 'owner'
+       AND EXISTS (
+         SELECT 1 FROM document_members owner_membership
+         WHERE owner_membership.document_id = $1
+           AND owner_membership.user_id = $4
+           AND owner_membership.role = 'owner'
+       )
      RETURNING user_id, role`,
-    [input.documentId, input.userId, input.role],
+    [input.documentId, input.userId, input.role, input.actorId],
   );
   return result.rows[0] ?? null;
 }
 
-export async function removeDocumentMember(documentId: string, userId: string) {
+export async function removeDocumentMember(
+  documentId: string,
+  userId: string,
+  actorId: string,
+) {
   const result = await query(
     `DELETE FROM document_members
      WHERE document_id = $1
        AND user_id = $2
        AND role <> 'owner'
+       AND EXISTS (
+         SELECT 1 FROM document_members owner_membership
+         WHERE owner_membership.document_id = $1
+           AND owner_membership.user_id = $3
+           AND owner_membership.role = 'owner'
+       )
      RETURNING user_id`,
-    [documentId, userId],
+    [documentId, userId, actorId],
   );
   return result.rowCount ?? 0;
 }

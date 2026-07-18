@@ -7,6 +7,10 @@ import {
   subscribe,
   type RealtimeEvent,
 } from "@/lib/realtime-bus";
+import {
+  enforceRateLimit,
+  parseUuidParam,
+} from "@/lib/api-security";
 
 export const config = {
   api: {
@@ -29,10 +33,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const user = await requireUser(req, res);
   if (!user) return;
 
-  const id = String(req.query.id ?? "");
-  if (!id) {
-    return res.status(400).json({ error: "Document id is required" });
-  }
+  const id = parseUuidParam(req.query.id, "Document id", res);
+  if (!id) return;
+  if (
+    !enforceRateLimit(res, {
+      scope: `events-connect:${id}`,
+      identity: user.id,
+      limit: 20,
+      windowMs: 60_000,
+    })
+  ) return;
 
   const document = await getDocumentForUser(id, user.id);
   if (!document || !canRead(document.role)) {

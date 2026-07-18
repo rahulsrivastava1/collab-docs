@@ -5,8 +5,20 @@ import { getDocumentForUser } from "@/lib/documents";
 import {
   getPresenceSnapshot,
   setPresence,
-  type PresenceMode,
 } from "@/lib/realtime-bus";
+import {
+  enforceRateLimit,
+  parseBody,
+  parseUuidParam,
+  presenceSchema,
+  requireSameOrigin,
+} from "@/lib/api-security";
+
+export const config = {
+  api: {
+    bodyParser: { sizeLimit: "2kb" },
+  },
+};
 
 function displayNameFor(user: { name?: string | null; email?: string | null }) {
   return user.name?.trim() || user.email?.split("@")[0]?.trim() || null;
@@ -16,10 +28,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const user = await requireUser(req, res);
   if (!user) return;
 
-  const id = String(req.query.id ?? "");
-  if (!id) {
-    return res.status(400).json({ error: "Document id is required" });
-  }
+  const id = parseUuidParam(req.query.id, "Document id", res);
+  if (!id) return;
 
   const document = await getDocumentForUser(id, user.id);
   if (!document || !canRead(document.role)) {
@@ -31,20 +41,23 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   if (req.method === "POST") {
-    const rawMode = req.body?.mode;
-    let mode: PresenceMode = "viewing";
-    if (rawMode === "editing" || rawMode === "viewing") {
-      mode = rawMode;
-    }
+    if (!requireSameOrigin(req, res)) return;
+    if (
+      !enforceRateLimit(res, {
+        scope: `presence:${id}`,
+        identity: user.id,
+        limit: 180,
+        windowMs: 60_000,
+      })
+    ) return;
 
-    if (mode === "editing" && !canEdit(document.role)) {
-      mode = "viewing";
-    }
+    const body = parseBody(presenceSchema, req, res);
+    if (!body) return;
 
-    const caret =
-      typeof req.body?.caret === "number" && Number.isFinite(req.body.caret)
-        ? Math.max(0, Math.floor(req.body.caret))
-        : null;
+    const mode = body.mode === "editing" && !canEdit(document.role)
+      ? "viewing"
+      : body.mode;
+    const caret = body.caret ?? null;
 
     const peers = setPresence(id, {
       userId: user.id,
