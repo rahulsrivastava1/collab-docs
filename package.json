@@ -9,7 +9,7 @@
     "db:up": "docker compose up -d",
     "db:down": "docker compose down",
     "db:logs": "docker compose logs -f postgres",
-    "db:migrate": "docker compose exec -T postgres psql -U docs -d google_docs_clone < db/migrate-003-yjs.sql"
+    "db:migrate": "docker compose exec -T postgres psql -U docs -d google_docs_clone < db/migrate-003-yjs.sql && docker compose exec -T postgres psql -U docs -d google_docs_clone < db/migrate-004-document-versions.sql"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",

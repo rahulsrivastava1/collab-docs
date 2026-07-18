@@ -21,6 +21,7 @@ export type RealtimeEvent =
         content: string;
         updated_at: string;
         yjs_state?: string | null;
+        yjs_generation?: number;
       };
     }
   | { type: "document_deleted"; documentId: string };

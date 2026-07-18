@@ -1,6 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { requireUser } from "@/lib/api-auth";
 import { createDocument, listDocumentsForUser } from "@/lib/documents";
+import { createDocumentVersionIfDue } from "@/lib/document-versions";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   const user = await requireUser(req, res);
@@ -15,6 +16,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const title =
       typeof req.body?.title === "string" ? req.body.title : "Untitled document";
     const doc = await createDocument({ ownerId: user.id, title });
+    await createDocumentVersionIfDue(doc.id, user.id);
     return res.status(201).json({ document: doc });
   }
 

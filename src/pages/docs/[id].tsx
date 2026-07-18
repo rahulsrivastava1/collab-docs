@@ -9,6 +9,10 @@ import { authOptions } from "@/lib/auth";
 import { SiteNav } from "@/components/SiteNav";
 import { ShareModal } from "@/components/ShareModal";
 import { ConfirmModal } from "@/components/ConfirmModal";
+import {
+  HistoryPanel,
+  type RestoredDocument,
+} from "@/components/HistoryPanel";
 import { PresenceBar, EditorTypingIndicator } from "@/components/PresenceBar";
 import { useSync } from "@/components/SyncProvider";
 import {
@@ -19,6 +23,7 @@ import { canEdit, canManageSharing, type DocumentRole } from "@/lib/acl";
 import type { PresenceMode } from "@/lib/realtime-bus";
 import {
   deleteLocalDocument,
+  discardOutboxForDocument,
   enqueueOutbox,
   getLocalDocument,
   putLocalDocument,
@@ -28,6 +33,7 @@ import {
   applyRemoteYjsState,
   commitLocalText,
   disposeClientYDoc,
+  encodeClientYDocState,
   loadYDocFromServerState,
   yTextString,
 } from "@/lib/yjs-client";
@@ -38,6 +44,8 @@ type DocumentPayload = {
   content: string;
   role: DocumentRole;
   updated_at: string;
+  yjs_state?: string | null;
+  yjs_generation?: number;
 };
 
 const POLL_MS = 7000;
@@ -70,6 +78,7 @@ export default function DocumentEditorPage() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [shareOpen, setShareOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [bodyFocused, setBodyFocused] = useState(false);
   const [presenceMode, setPresenceMode] = useState<PresenceMode>("viewing");
@@ -225,7 +234,7 @@ export default function DocumentEditorPage() {
         if (!local) {
           setLoadError("Document unavailable offline. Connect to load it once.");
         } else {
-          loadYDocFromServerState(id, null, local.content);
+          loadYDocFromServerState(id, local.yjsState, local.content);
         }
         return;
       }
@@ -239,6 +248,7 @@ export default function DocumentEditorPage() {
           document?: {
             content: string;
             yjs_state?: string | null;
+            yjs_generation?: number;
           };
         };
         if (data.document) {
@@ -254,7 +264,7 @@ export default function DocumentEditorPage() {
           }
         }
       } catch {
-        if (local) loadYDocFromServerState(id, null, local.content);
+        if (local) loadYDocFromServerState(id, local.yjsState, local.content);
       }
 
       hydrated.current = true;
@@ -281,6 +291,35 @@ export default function DocumentEditorPage() {
     async (remote: RemoteDocumentUpdate) => {
       if (!id || !userId || remote.id !== id) return;
 
+      const existing = await getLocalDocument(userId, id);
+      const remoteGeneration = remote.yjs_generation ?? 1;
+      const localGeneration = existing?.yjsGeneration ?? 1;
+
+      if (remoteGeneration !== localGeneration) {
+        // A restore creates a new generation: replace instead of merging stale state.
+        loadYDocFromServerState(id, remote.yjs_state, remote.content);
+        await discardOutboxForDocument(userId, id);
+        await putLocalDocument({
+          id,
+          userId,
+          title: remote.title,
+          content: remote.content,
+          yjsState: remote.yjs_state ?? null,
+          yjsGeneration: remoteGeneration,
+          role: document?.role ?? existing?.role ?? "viewer",
+          ownerName: existing?.ownerName ?? session?.user?.name ?? null,
+          ownerEmail: existing?.ownerEmail ?? session?.user?.email ?? "",
+          updatedAt: remote.updated_at,
+          dirty: false,
+        });
+        writeBodyContent(remote.content, { force: true });
+        setTitle(remote.title);
+        lastPersisted.current = { title: remote.title, content: remote.content };
+        setSaveLabel("Restored version");
+        await refreshPendingCount();
+        return;
+      }
+
       // CRDT merge: fold local typing into Y, then apply remote state
       if (bodyFocusedRef.current || Date.now() - lastTypedAt.current < EDITING_IDLE_MS) {
         commitLocalText(id, readBodyContent());
@@ -297,6 +336,8 @@ export default function DocumentEditorPage() {
         userId,
         title: remote.title,
         content: merged,
+        yjsState: remote.yjs_state ?? existing?.yjsState ?? null,
+        yjsGeneration: remoteGeneration,
         role: document?.role ?? "viewer",
         ownerName: session?.user?.name ?? null,
         ownerEmail: session?.user?.email ?? "",
@@ -319,6 +360,7 @@ export default function DocumentEditorPage() {
       session?.user?.email,
       readBodyContent,
       writeBodyContent,
+      refreshPendingCount,
     ],
   );
 
@@ -372,6 +414,7 @@ export default function DocumentEditorPage() {
       setSaveError(null);
 
       const { yjsUpdateBase64 } = commitLocalText(id, nextContent);
+      const existing = await getLocalDocument(userId, id);
 
       await saveDocumentLocally({
         userId,
@@ -382,6 +425,8 @@ export default function DocumentEditorPage() {
         ownerName: session?.user?.name ?? null,
         ownerEmail: session?.user?.email ?? "",
         yjsUpdate: yjsUpdateBase64,
+        yjsState: encodeClientYDocState(id),
+        yjsGeneration: existing?.yjsGeneration ?? 1,
       });
       lastPersisted.current = {
         title: nextTitle.trim() || "Untitled document",
@@ -425,6 +470,44 @@ export default function DocumentEditorPage() {
     if (!hydrated.current || !editable || !document) return;
     scheduleSave();
   }, [title, editable, document, scheduleSave]);
+
+  async function onVersionRestored(restored: RestoredDocument) {
+    if (!id || !userId || !document) return;
+
+    await discardOutboxForDocument(userId, id);
+    loadYDocFromServerState(id, restored.yjs_state, restored.content);
+    await putLocalDocument({
+      id,
+      userId,
+      title: restored.title,
+      content: restored.content,
+      yjsState: restored.yjs_state,
+      yjsGeneration: restored.yjs_generation,
+      role: document.role,
+      ownerName: session?.user?.name ?? null,
+      ownerEmail: session?.user?.email ?? "",
+      updatedAt: restored.updated_at,
+      dirty: false,
+    });
+
+    setDocument({
+      id,
+      title: restored.title,
+      content: restored.content,
+      role: document.role,
+      updated_at: restored.updated_at,
+      yjs_state: restored.yjs_state,
+      yjs_generation: restored.yjs_generation,
+    });
+    setTitle(restored.title);
+    writeBodyContent(restored.content, { force: true });
+    lastPersisted.current = {
+      title: restored.title,
+      content: restored.content,
+    };
+    setSaveLabel("Restored version");
+    await refreshPendingCount();
+  }
 
   async function onDeleteConfirm() {
     if (!id || !canShare || !userId) return;
@@ -488,8 +571,18 @@ export default function DocumentEditorPage() {
             </div>
             <div className="flex flex-col items-stretch gap-2 sm:items-end">
               <PresenceBar peers={peers} connected={realtimeConnected} />
-              {canShare ? (
-                <div className="flex items-center justify-end gap-2">
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setHistoryOpen(true)}
+                  className="btn btn-secondary"
+                  disabled={!online}
+                  title={!online ? "Version history requires network" : undefined}
+                >
+                  History
+                </button>
+                {canShare ? (
+                  <>
                   <button
                     type="button"
                     onClick={() => setShareOpen(true)}
@@ -506,8 +599,9 @@ export default function DocumentEditorPage() {
                   >
                     Delete
                   </button>
-                </div>
-              ) : null}
+                  </>
+                ) : null}
+              </div>
             </div>
           </div>
         </div>
@@ -558,6 +652,16 @@ export default function DocumentEditorPage() {
           )}
         </main>
       </div>
+
+      {id ? (
+        <HistoryPanel
+          documentId={id}
+          open={historyOpen}
+          canRestore={editable}
+          onClose={() => setHistoryOpen(false)}
+          onRestored={onVersionRestored}
+        />
+      ) : null}
 
       {id && canShare ? (
         <>

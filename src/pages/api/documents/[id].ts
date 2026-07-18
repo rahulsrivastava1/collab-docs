@@ -11,6 +11,7 @@ import {
   updateDocument,
 } from "@/lib/documents";
 import { broadcast } from "@/lib/realtime-bus";
+import { createDocumentVersionIfDue } from "@/lib/document-versions";
 import { stateToBase64 } from "@/lib/yjs-helpers";
 
 function serializeDocument(
@@ -19,6 +20,7 @@ function serializeDocument(
     title: string;
     content: string;
     yjs_state?: Buffer | null;
+    yjs_generation?: number;
     updated_at: Date | string;
     role?: string;
   },
@@ -36,6 +38,7 @@ function serializeDocument(
     role,
     updated_at: updatedAt,
     yjs_state: stateToBase64(doc.yjs_state ?? null),
+    yjs_generation: doc.yjs_generation ?? 1,
   };
 }
 
@@ -69,6 +72,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       typeof req.body?.content === "string" ? req.body.content : undefined;
     const yjsUpdate =
       typeof req.body?.yjsUpdate === "string" ? req.body.yjsUpdate : undefined;
+    const yjsGeneration =
+      typeof req.body?.yjsGeneration === "number"
+        ? req.body.yjsGeneration
+        : document.yjs_generation;
+
+    if (yjsUpdate && yjsGeneration !== document.yjs_generation) {
+      return res.status(409).json({
+        error: "Document was restored. Refresh before syncing older edits.",
+        document: serializeDocument(document, document.role),
+      });
+    }
 
     const updated = await updateDocument(id, {
       title,
@@ -78,6 +92,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const payload = updated
       ? serializeDocument(updated, document.role)
       : serializeDocument(document, document.role);
+
+    if (updated) {
+      await createDocumentVersionIfDue(id, user.id);
+    }
 
     broadcast(
       id,
@@ -89,6 +107,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           content: payload.content,
           updated_at: payload.updated_at,
           yjs_state: payload.yjs_state,
+          yjs_generation: payload.yjs_generation,
         },
       },
       user.id,

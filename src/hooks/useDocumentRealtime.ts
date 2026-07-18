@@ -13,6 +13,7 @@ export type RemoteDocumentUpdate = {
   content: string;
   updated_at: string;
   yjs_state?: string | null;
+  yjs_generation?: number;
 };
 
 type UseDocumentRealtimeOptions = {

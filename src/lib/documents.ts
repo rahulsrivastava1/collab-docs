@@ -6,6 +6,7 @@ export type DocumentRow = {
   title: string;
   content: string;
   yjs_state: Buffer | null;
+  yjs_generation: number;
   owner_id: string;
   created_at: Date;
   updated_at: Date;
@@ -109,47 +110,66 @@ export async function updateDocument(
     const { applyYjsUpdateToState, createYDocFromPlainText, encodeYDocState } = await import(
       "@/lib/yjs-helpers"
     );
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
 
-    const current = await query<DocumentRow>(
-      `SELECT * FROM documents WHERE id = $1 LIMIT 1`,
-      [documentId],
-    );
-    const row = current.rows[0];
-    if (!row) return null;
+      // Serialize concurrent CRDT merges so no update can overwrite another.
+      const current = await client.query<DocumentRow>(
+        `SELECT * FROM documents WHERE id = $1 FOR UPDATE`,
+        [documentId],
+      );
+      const row = current.rows[0];
+      if (!row) {
+        await client.query("ROLLBACK");
+        return null;
+      }
 
-    let state = row.yjs_state;
-    if (!state || state.length === 0) {
-      const boot = createYDocFromPlainText(row.content ?? "");
-      state = encodeYDocState(boot);
+      let state = row.yjs_state;
+      if (!state || state.length === 0) {
+        const boot = createYDocFromPlainText(row.content ?? "");
+        state = encodeYDocState(boot);
+      }
+
+      const merged = applyYjsUpdateToState(
+        state,
+        input.yjsUpdateBase64,
+        row.content ?? "",
+      );
+
+      const title =
+        typeof input.title === "string"
+          ? input.title.trim() || "Untitled document"
+          : undefined;
+
+      const result = await client.query<DocumentRow>(
+        title
+          ? `UPDATE documents
+             SET title = $1,
+                 content = $2,
+                 yjs_state = $3,
+                 updated_at = NOW()
+             WHERE id = $4
+             RETURNING *`
+          : `UPDATE documents
+             SET content = $1,
+                 yjs_state = $2,
+                 updated_at = NOW()
+             WHERE id = $3
+             RETURNING *`,
+        title
+          ? [title, merged.content, merged.state, documentId]
+          : [merged.content, merged.state, documentId],
+      );
+
+      await client.query("COMMIT");
+      return result.rows[0] ?? null;
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
     }
-
-    const merged = applyYjsUpdateToState(state, input.yjsUpdateBase64, row.content ?? "");
-
-    const title =
-      typeof input.title === "string"
-        ? input.title.trim() || "Untitled document"
-        : undefined;
-
-    const result = await query<DocumentRow>(
-      title
-        ? `UPDATE documents
-           SET title = $1,
-               content = $2,
-               yjs_state = $3,
-               updated_at = NOW()
-           WHERE id = $4
-           RETURNING *`
-        : `UPDATE documents
-           SET content = $1,
-               yjs_state = $2,
-               updated_at = NOW()
-           WHERE id = $3
-           RETURNING *`,
-      title
-        ? [title, merged.content, merged.state, documentId]
-        : [merged.content, merged.state, documentId],
-    );
-    return result.rows[0] ?? null;
   }
 
   const sets: string[] = [];

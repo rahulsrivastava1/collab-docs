@@ -24,6 +24,7 @@ export type RemoteDocument = {
   owner_name?: string | null;
   owner_email?: string;
   yjs_state?: string | null;
+  yjs_generation?: number;
 };
 
 export async function listLocalDocuments(userId: string) {
@@ -73,6 +74,8 @@ export async function upsertRemoteList(userId: string, docs: RemoteDocListItem[]
         userId,
         title: remote.title,
         content: existing?.content ?? "",
+        yjsState: existing?.yjsState ?? null,
+        yjsGeneration: existing?.yjsGeneration ?? 1,
         role: remote.role,
         ownerName: remote.owner_name,
         ownerEmail: remote.owner_email,
@@ -106,6 +109,8 @@ export async function upsertRemoteDocument(
     userId,
     title: remote.title,
     content: remote.content,
+    yjsState: remote.yjs_state ?? null,
+    yjsGeneration: remote.yjs_generation ?? 1,
     role: remote.role,
     ownerName: extras?.ownerName ?? remote.owner_name ?? existing?.ownerName ?? null,
     ownerEmail: extras?.ownerEmail ?? remote.owner_email ?? existing?.ownerEmail ?? "",
@@ -125,6 +130,8 @@ export async function saveDocumentLocally(input: {
   ownerName?: string | null;
   ownerEmail?: string;
   yjsUpdate?: string | null;
+  yjsState?: string | null;
+  yjsGeneration?: number;
 }) {
   const now = new Date().toISOString();
   const existing = await getLocalDocument(input.userId, input.documentId);
@@ -134,6 +141,8 @@ export async function saveDocumentLocally(input: {
     userId: input.userId,
     title: input.title.trim() || "Untitled document",
     content: input.content,
+    yjsState: input.yjsState ?? existing?.yjsState ?? null,
+    yjsGeneration: input.yjsGeneration ?? existing?.yjsGeneration ?? 1,
     role: input.role,
     ownerName: input.ownerName ?? existing?.ownerName ?? null,
     ownerEmail: input.ownerEmail ?? existing?.ownerEmail ?? "",
@@ -150,6 +159,7 @@ export async function saveDocumentLocally(input: {
       title: next.title,
       content: next.content,
       ...(input.yjsUpdate ? { yjsUpdate: input.yjsUpdate } : {}),
+      yjsGeneration: next.yjsGeneration,
     },
   });
 
@@ -171,6 +181,15 @@ export async function enqueueOutbox(input: {
     createdAt: new Date().toISOString(),
     status: "pending",
   });
+}
+
+export async function discardOutboxForDocument(userId: string, documentId: string) {
+  const db = getLocalDb();
+  const items = await db.outbox.where("userId").equals(userId).toArray();
+  const ids = items
+    .filter((item) => item.documentId === documentId && item.id != null)
+    .map((item) => item.id!);
+  await db.outbox.bulkDelete(ids);
 }
 
 export async function listPendingOutbox(userId: string) {

@@ -93,6 +93,7 @@ export async function flushOutbox(
           latestUpdate?.payload.title ?? createItem.payload.title ?? "Untitled document";
         const content =
           latestUpdate?.payload.content ?? createItem.payload.content ?? "";
+        const yjsUpdate = latestUpdate?.payload.yjsUpdate;
 
         const res = await fetch("/api/documents", {
           method: "POST",
@@ -109,11 +110,19 @@ export async function flushOutbox(
 
         const serverId = data.document.id;
 
-        if (content) {
+        if (content || yjsUpdate) {
           const patchRes = await fetch(`/api/documents/${serverId}`, {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ title, content }),
+            body: JSON.stringify(
+              yjsUpdate
+                ? {
+                    title,
+                    yjsUpdate,
+                    yjsGeneration: latestUpdate?.payload.yjsGeneration ?? 1,
+                  }
+                : { title, content },
+            ),
           });
           if (!patchRes.ok) {
             return { flushed, error: "Created doc but failed to push content", remapped };
@@ -187,6 +196,7 @@ export async function flushOutbox(
             ? {
                 title: latestUpdate.payload.title,
                 yjsUpdate,
+              yjsGeneration: latestUpdate.payload.yjsGeneration ?? 1,
               }
             : {
                 title: latestUpdate.payload.title,
@@ -195,6 +205,35 @@ export async function flushOutbox(
         ),
       });
       const data = (await res.json()) as { document?: RemoteDocument; error?: string };
+
+      if (res.status === 409 && data.document) {
+        // A restore created a new generation. The restore is authoritative;
+        // discard stale queued edits and adopt the restored CRDT state.
+        const existing = await getLocalDocument(userId, documentId);
+        const { loadYDocFromServerState } = await import("@/lib/yjs-client");
+        loadYDocFromServerState(
+          documentId,
+          data.document.yjs_state,
+          data.document.content,
+        );
+        await putLocalDocument({
+          id: documentId,
+          userId,
+          title: data.document.title,
+          content: data.document.content,
+          yjsState: data.document.yjs_state ?? null,
+          yjsGeneration: data.document.yjs_generation ?? 1,
+          role: existing?.role ?? data.document.role,
+          ownerName: existing?.ownerName ?? null,
+          ownerEmail: existing?.ownerEmail ?? "",
+          updatedAt: data.document.updated_at,
+          dirty: false,
+        });
+        await markGroupSynced(group);
+        flushed += group.length;
+        continue;
+      }
+
       if (!res.ok) {
         const db = getLocalDb();
         for (const item of group) {
@@ -205,11 +244,24 @@ export async function flushOutbox(
 
       if (data.document) {
         const existing = await getLocalDocument(userId, documentId);
+        if (
+          data.document.yjs_state &&
+          (data.document.yjs_generation ?? 1) !== (existing?.yjsGeneration ?? 1)
+        ) {
+          const { loadYDocFromServerState } = await import("@/lib/yjs-client");
+          loadYDocFromServerState(
+            documentId,
+            data.document.yjs_state,
+            data.document.content,
+          );
+        }
         await putLocalDocument({
           id: documentId,
           userId,
           title: data.document.title,
           content: data.document.content,
+          yjsState: data.document.yjs_state ?? null,
+          yjsGeneration: data.document.yjs_generation ?? existing?.yjsGeneration ?? 1,
           role: existing?.role ?? "editor",
           ownerName: existing?.ownerName ?? null,
           ownerEmail: existing?.ownerEmail ?? "",

@@ -6,6 +6,8 @@ export type LocalDocument = {
   userId: string;
   title: string;
   content: string;
+  yjsState?: string | null;
+  yjsGeneration?: number;
   role: DocumentRole;
   ownerName: string | null;
   ownerEmail: string;
@@ -24,6 +26,7 @@ export type OutboxItem = {
     title?: string;
     content?: string;
     yjsUpdate?: string;
+    yjsGeneration?: number;
   };
   createdAt: string;
   status: "pending" | "synced" | "failed";

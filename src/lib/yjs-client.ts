@@ -88,6 +88,10 @@ export function yTextString(documentId: string) {
   return getClientYDoc(documentId).getText(TEXT_KEY).toString();
 }
 
+export function encodeClientYDocState(documentId: string) {
+  return toBase64(Y.encodeStateAsUpdate(getClientYDoc(documentId)));
+}
+
 /**
  * Apply textarea value into Y.Text via diff, return base64 update to sync.
  */
