@@ -46,6 +46,7 @@ type PasswordInputProps = {
   autoComplete?: string;
   className: string;
   "aria-invalid"?: boolean;
+  "aria-describedby"?: string;
 };
 
 export function PasswordInput({
@@ -56,6 +57,7 @@ export function PasswordInput({
   autoComplete = "current-password",
   className,
   "aria-invalid": ariaInvalid,
+  "aria-describedby": ariaDescribedBy,
 }: PasswordInputProps) {
   const [visible, setVisible] = useState(false);
 
@@ -70,12 +72,14 @@ export function PasswordInput({
         onChange={(e) => onChange(e.target.value)}
         className={`${className} mt-0 pr-11`}
         aria-invalid={ariaInvalid}
+        aria-describedby={ariaDescribedBy}
       />
       <button
         type="button"
         onClick={() => setVisible((prev) => !prev)}
         className="absolute top-1/2 right-2.5 -translate-y-1/2 rounded-md p-1.5 text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-800"
         aria-label={visible ? "Hide password" : "Show password"}
+        aria-pressed={visible}
       >
         {visible ? <EyeOffIcon className="size-4" /> : <EyeIcon className="size-4" />}
       </button>

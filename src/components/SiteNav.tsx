@@ -16,6 +16,7 @@ export function SiteNav({ compact = false }: SiteNavProps) {
 
   const isLogin = path === "/login";
   const isRegister = path === "/register";
+  const isDocs = path.startsWith("/docs");
 
   const inactiveClass = "btn btn-ghost";
   const activeClass = "btn btn-primary";
@@ -26,47 +27,64 @@ export function SiteNav({ compact = false }: SiteNavProps) {
   return (
     <header className="sticky top-0 z-40 border-b border-zinc-200 bg-white">
       <div
-        className={`mx-auto flex w-full items-center justify-between gap-3 px-6 ${
+        className={`mx-auto flex w-full items-center justify-between gap-2 px-4 sm:gap-3 sm:px-6 ${
           compact ? "max-w-lg py-3" : "max-w-5xl py-3"
         }`}
       >
-        <Link href="/" className="group flex items-center gap-2.5">
-          <span className="flex size-8 items-center justify-center rounded-lg bg-[#1a73e8] text-sm font-bold !text-white shadow-sm">
+        <Link
+          href="/"
+          className="group flex min-w-0 items-center gap-2 sm:gap-2.5"
+          aria-label={`${SITE_NAME} home`}
+        >
+          <span
+            className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-[#1a73e8] text-sm font-bold !text-white shadow-sm"
+            aria-hidden
+          >
             D
           </span>
-          <span className="text-[15px] font-semibold tracking-tight text-zinc-900 group-hover:text-zinc-700">
+          <span className="truncate text-[15px] font-semibold tracking-tight text-zinc-900 group-hover:text-zinc-700">
             {SITE_NAME}
           </span>
         </Link>
 
-        <nav className="flex flex-wrap items-center justify-end gap-2 sm:gap-3">
+        <nav
+          className="flex flex-wrap items-center justify-end gap-1.5 sm:gap-2"
+          aria-label="Account"
+        >
           {status === "loading" ? (
-            <span className="text-sm text-zinc-500">Loading…</span>
+            <span className="text-sm text-zinc-500" role="status">
+              Loading…
+            </span>
           ) : session?.user ? (
             <>
               <ConnectionStatus />
               <Link
                 href="/docs"
-                className={
-                  path.startsWith("/docs") ? "btn btn-secondary" : "btn btn-ghost"
-                }
+                aria-current={isDocs ? "page" : undefined}
+                className={isDocs ? "btn btn-secondary" : inactiveClass}
               >
                 Docs
               </Link>
-              <div className="inline-flex h-9 items-center gap-2 rounded-full bg-zinc-100 py-0 pl-1 pr-3">
+              <div
+                className="inline-flex h-9 max-w-[min(100%,11rem)] items-center gap-2 rounded-full bg-zinc-100 py-0 pl-1 pr-2.5 sm:max-w-[14rem] sm:pr-3"
+                title={displayName}
+              >
                 {session.user.image ? (
                   <img
                     src={session.user.image}
                     alt=""
-                    className="size-7 rounded-full object-cover"
+                    className="size-7 shrink-0 rounded-full object-cover"
                     referrerPolicy="no-referrer"
                   />
                 ) : (
-                  <span className="flex size-7 items-center justify-center rounded-full bg-zinc-300 text-xs font-semibold text-zinc-700">
+                  <span
+                    className="flex size-7 shrink-0 items-center justify-center rounded-full bg-zinc-300 text-xs font-semibold text-zinc-700"
+                    aria-hidden
+                  >
                     {initial}
                   </span>
                 )}
-                <span className="max-w-[140px] truncate text-sm font-medium text-zinc-900 sm:max-w-[200px]">
+                <span className="truncate text-sm font-medium text-zinc-900">
                   {displayName}
                 </span>
               </div>

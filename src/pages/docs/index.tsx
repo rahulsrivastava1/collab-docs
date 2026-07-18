@@ -50,6 +50,30 @@ export const getServerSideProps: GetServerSideProps = async (context) => {
   return { props: {} };
 };
 
+function DocsSkeleton() {
+  return (
+    <div
+      className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3"
+      aria-hidden
+    >
+      {Array.from({ length: 6 }).map((_, index) => (
+        <div
+          key={index}
+          className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm"
+        >
+          <div className="skeleton h-28 w-full" />
+          <div className="skeleton mt-4 h-4 w-3/4" />
+          <div className="skeleton mt-2 h-3 w-1/2" />
+          <div className="mt-3 flex justify-between gap-2">
+            <div className="skeleton h-6 w-16 rounded-full" />
+            <div className="skeleton h-3 w-20" />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function DocsPage() {
   const router = useRouter();
   const { data: session, status } = useSession();
@@ -165,38 +189,66 @@ export default function DocsPage() {
       </Head>
       <div className="flex min-h-screen flex-col bg-zinc-100 text-zinc-900">
         <SiteNav />
-        <main className="mx-auto w-full max-w-5xl flex-1 px-6 py-10">
+        <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-8 sm:px-6 sm:py-10">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <h1 className="text-3xl font-semibold tracking-tight">Documents</h1>
+              <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">
+                Documents
+              </h1>
               <p className="mt-1 text-sm text-zinc-600">
-                Local-first with background sync — edits go to this device first, then the server.
+                Local-first with background sync — edits go to this device first, then
+                the server.
               </p>
+              {!online ? (
+                <p
+                  className="mt-2 inline-flex rounded-full bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-900"
+                  role="status"
+                >
+                  Offline — new docs stay on this device until you reconnect
+                </p>
+              ) : null}
             </div>
             <button
               type="button"
               onClick={() => void createDocument()}
               disabled={creating}
-              className="btn btn-primary"
+              className="btn btn-primary w-full sm:w-auto"
             >
               {creating ? "Creating…" : "Blank document"}
             </button>
           </div>
 
           {error ? (
-            <p className="mt-6 rounded-lg bg-red-50 px-3 py-2 text-sm font-medium text-red-700">
+            <p
+              role="alert"
+              className="mt-6 rounded-lg bg-red-50 px-3 py-2 text-sm font-medium text-red-700"
+            >
               {error}
             </p>
           ) : null}
 
           {loading ? (
-            <p className="mt-10 text-sm text-zinc-500">Loading documents…</p>
+            <>
+              <p className="sr-only" role="status">
+                Loading documents…
+              </p>
+              <DocsSkeleton />
+            </>
           ) : documents.length === 0 ? (
             <div className="mt-10 rounded-2xl border border-dashed border-zinc-300 bg-white px-6 py-16 text-center">
               <p className="text-lg font-medium text-zinc-900">No documents yet</p>
               <p className="mt-2 text-sm text-zinc-600">
-                Create a blank document to get started.
+                Create a blank document to get started
+                {!online ? " — it will sync when you are back online" : ""}.
               </p>
+              <button
+                type="button"
+                onClick={() => void createDocument()}
+                disabled={creating}
+                className="btn btn-primary mt-6"
+              >
+                {creating ? "Creating…" : "Create blank document"}
+              </button>
             </div>
           ) : (
             <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -204,7 +256,7 @@ export default function DocsPage() {
                 <Link
                   key={doc.id}
                   href={`/docs/${doc.id}`}
-                  className="group flex flex-col rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm transition hover:border-[#1a73e8]/40 hover:shadow-md"
+                  className="card-link group flex flex-col rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm transition hover:border-[#1a73e8]/40 hover:shadow-md"
                 >
                   <div className="flex h-28 items-center justify-center rounded-xl bg-zinc-50 text-[#1a73e8]">
                     <svg

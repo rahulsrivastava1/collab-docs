@@ -539,40 +539,64 @@ export default function DocumentEditorPage() {
     }
   }
 
+  const pageTitle = `${title || "Document"} · Google Docs Clone`;
+  const statusMessage = [
+    document ? `Your role: ${document.role}` : null,
+    saveLabel || null,
+    !online ? "Offline edits stay on this device" : null,
+    saveError || null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
   return (
     <>
       <Head>
-        <title>{title || "Document"} · Google Docs Clone</title>
+        <title>{pageTitle}</title>
       </Head>
       <div className="flex min-h-screen flex-col bg-zinc-100 text-zinc-900">
         <SiteNav />
 
         <div className="border-b border-zinc-200 bg-white">
-          <div className="mx-auto flex w-full max-w-5xl flex-col gap-3 px-6 py-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="mx-auto flex w-full max-w-5xl flex-col gap-3 px-4 py-3 sm:px-6 lg:flex-row lg:items-start lg:justify-between">
             <div className="min-w-0 flex-1">
-              <Link href="/docs" className="text-xs font-medium text-[#1a73e8] hover:underline">
+              <Link
+                href="/docs"
+                className="text-xs font-medium text-[#1a73e8] hover:underline focus-visible:rounded"
+              >
                 ← All documents
               </Link>
-              <input
-                value={title}
-                onChange={(e) => {
-                  markTyping();
-                  setTitle(e.target.value);
-                }}
-                disabled={!editable}
-                className="mt-1 block w-full truncate border-0 bg-transparent p-0 text-xl font-semibold text-zinc-900 outline-none disabled:text-zinc-700"
-                placeholder="Untitled document"
-              />
-              <p className="mt-0.5 text-xs text-zinc-500">
-                {document ? `Your role: ${document.role}` : null}
-                {saveLabel ? ` · ${saveLabel}` : null}
-                {!online ? " · Offline edits stay on this device" : null}
-                {saveError ? ` · ${saveError}` : null}
+              <label className="mt-1 block">
+                <span className="sr-only">Document title</span>
+                <input
+                  value={title}
+                  onChange={(e) => {
+                    markTyping();
+                    setTitle(e.target.value);
+                  }}
+                  disabled={!editable}
+                  className="block w-full truncate border-0 bg-transparent p-0 text-xl font-semibold text-zinc-900 outline-none focus-visible:ring-2 focus-visible:ring-[#1a73e8]/30 focus-visible:ring-offset-2 disabled:text-zinc-700"
+                  placeholder="Untitled document"
+                  aria-describedby="doc-status"
+                />
+              </label>
+              <p
+                id="doc-status"
+                className="mt-0.5 text-xs text-zinc-500"
+                role="status"
+                aria-live="polite"
+              >
+                {statusMessage || "\u00a0"}
               </p>
+              {saveError ? (
+                <p role="alert" className="sr-only">
+                  {saveError}
+                </p>
+              ) : null}
             </div>
-            <div className="flex flex-col items-stretch gap-2 sm:items-end">
+            <div className="flex flex-col items-stretch gap-2 lg:items-end">
               <PresenceBar peers={peers} connected={realtimeConnected} />
-              <div className="flex flex-wrap items-center justify-end gap-2">
+              <div className="flex flex-wrap items-center gap-2 lg:justify-end">
                 {id ? (
                   <AiPanel
                     documentId={id}
@@ -597,27 +621,29 @@ export default function DocumentEditorPage() {
                   className="btn btn-secondary"
                   disabled={!online}
                   title={!online ? "Version history requires network" : undefined}
+                  aria-label={!online ? "History unavailable offline" : "Version history"}
                 >
                   History
                 </button>
                 {canShare ? (
                   <>
-                  <button
-                    type="button"
-                    onClick={() => setShareOpen(true)}
-                    className="btn btn-primary"
-                    disabled={!online}
-                    title={!online ? "Share requires network" : undefined}
-                  >
-                    Share
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setDeleteOpen(true)}
-                    className="btn btn-danger"
-                  >
-                    Delete
-                  </button>
+                    <button
+                      type="button"
+                      onClick={() => setShareOpen(true)}
+                      className="btn btn-primary"
+                      disabled={!online}
+                      title={!online ? "Share requires network" : undefined}
+                      aria-label={!online ? "Share unavailable offline" : "Share document"}
+                    >
+                      Share
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDeleteOpen(true)}
+                      className="btn btn-danger"
+                    >
+                      Delete
+                    </button>
                   </>
                 ) : null}
               </div>
@@ -625,11 +651,17 @@ export default function DocumentEditorPage() {
           </div>
         </div>
 
-        <main className="mx-auto w-full max-w-5xl flex-1 px-6 py-6">
+        <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-4 sm:px-6 sm:py-6">
           {loading ? (
-            <p className="text-sm text-zinc-500">Loading document…</p>
+            <div role="status" aria-live="polite">
+              <p className="text-sm text-zinc-500">Loading document…</p>
+              <div className="skeleton mt-4 min-h-[70vh] w-full rounded-2xl" aria-hidden />
+            </div>
           ) : loadError ? (
-            <p className="rounded-lg bg-red-50 px-3 py-2 text-sm font-medium text-red-700">
+            <p
+              role="alert"
+              className="rounded-lg bg-red-50 px-3 py-2 text-sm font-medium text-red-700"
+            >
               {loadError}
             </p>
           ) : (
@@ -638,7 +670,11 @@ export default function DocumentEditorPage() {
                 editingPeers={editingPeers}
                 textareaRef={textareaRef}
               />
+              <label className="sr-only" htmlFor="document-body">
+                Document body
+              </label>
               <textarea
+                id="document-body"
                 key={id}
                 ref={textareaRef}
                 defaultValue={content}
@@ -662,10 +698,11 @@ export default function DocumentEditorPage() {
                   contentRef.current = textareaRef.current?.value ?? contentRef.current;
                 }}
                 readOnly={!editable}
+                aria-readonly={!editable}
                 placeholder={
                   editable ? "Start typing…" : "You have view-only access to this document."
                 }
-                className="min-h-[70vh] w-full resize-y rounded-2xl border border-zinc-200 bg-white p-6 text-[15px] leading-7 text-zinc-900 shadow-sm outline-none focus:border-[#1a73e8] focus:ring-2 focus:ring-[#1a73e8]/20 disabled:bg-zinc-50"
+                className="min-h-[70vh] w-full resize-y rounded-2xl border border-zinc-200 bg-white p-4 text-[15px] leading-7 text-zinc-900 shadow-sm outline-none focus-visible:border-[#1a73e8] focus-visible:ring-2 focus-visible:ring-[#1a73e8]/20 sm:p-6 read-only:bg-zinc-50"
               />
             </div>
           )}

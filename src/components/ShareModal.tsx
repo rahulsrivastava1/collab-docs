@@ -1,5 +1,6 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import type { DocumentRole } from "@/lib/acl";
+import { useDialogFocus } from "@/lib/use-dialog-focus";
 
 type Member = {
   user_id: string;
@@ -22,6 +23,14 @@ export function ShareModal({ documentId, open, onClose }: ShareModalProps) {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [loadingMembers, setLoadingMembers] = useState(false);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const emailRef = useRef<HTMLInputElement>(null);
+
+  useDialogFocus(dialogRef, {
+    open,
+    onClose,
+    initialFocusRef: emailRef,
+  });
 
   useEffect(() => {
     if (!open) return;
@@ -84,6 +93,7 @@ export function ShareModal({ documentId, open, onClose }: ShareModalProps) {
         });
       }
       setEmail("");
+      emailRef.current?.focus();
     } catch {
       setError("Network error. Please try again.");
     } finally {
@@ -124,58 +134,62 @@ export function ShareModal({ documentId, open, onClose }: ShareModalProps) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
       <div
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby="share-title"
-        className="w-full max-w-lg rounded-2xl border border-zinc-200 bg-white p-6 shadow-xl"
+        aria-describedby="share-description"
+        className="w-full max-w-lg rounded-2xl border border-zinc-200 bg-white p-5 shadow-xl sm:p-6"
       >
         <div className="flex items-start justify-between gap-4">
           <div>
             <h2 id="share-title" className="text-xl font-semibold text-zinc-900">
               Share document
             </h2>
-            <p className="mt-1 text-sm text-zinc-600">
+            <p id="share-description" className="mt-1 text-sm text-zinc-600">
               Invite by email. They must already have an account.
             </p>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="btn btn-ghost btn-sm"
-          >
+          <button type="button" onClick={onClose} className="btn btn-ghost btn-sm">
             Close
           </button>
         </div>
 
         <form onSubmit={onInvite} className="mt-5 flex flex-col gap-3 sm:flex-row">
-          <input
-            type="email"
-            required
-            placeholder="colleague@example.com"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            className="min-w-0 flex-1 rounded-lg border border-zinc-300 px-3 text-sm text-zinc-900 outline-none focus:border-[#1a73e8] focus:ring-2 focus:ring-[#1a73e8]/30"
-            style={{ height: "var(--btn-height)" }}
-          />
-          <select
-            value={role}
-            onChange={(e) => setRole(e.target.value as "editor" | "viewer")}
-            className="select"
-          >
-            <option value="editor">Editor</option>
-            <option value="viewer">Viewer</option>
-          </select>
-          <button
-            type="submit"
-            disabled={loading}
-            className="btn btn-primary"
-          >
+          <label className="min-w-0 flex-1">
+            <span className="sr-only">Email address</span>
+            <input
+              ref={emailRef}
+              type="email"
+              required
+              placeholder="colleague@example.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="field"
+              style={{ height: "var(--btn-height)", paddingTop: 0, paddingBottom: 0 }}
+            />
+          </label>
+          <label>
+            <span className="sr-only">Role</span>
+            <select
+              value={role}
+              onChange={(e) => setRole(e.target.value as "editor" | "viewer")}
+              className="select w-full sm:w-auto"
+            >
+              <option value="editor">Editor</option>
+              <option value="viewer">Viewer</option>
+            </select>
+          </label>
+          <button type="submit" disabled={loading} className="btn btn-primary">
             {loading ? "Sharing…" : "Share"}
           </button>
         </form>
 
         {error ? (
-          <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm font-medium text-red-700">
+          <p
+            role="alert"
+            className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm font-medium text-red-700"
+          >
             {error}
           </p>
         ) : null}
@@ -183,7 +197,11 @@ export function ShareModal({ documentId, open, onClose }: ShareModalProps) {
         <div className="mt-5">
           <h3 className="text-sm font-semibold text-zinc-800">People with access</h3>
           {loadingMembers ? (
-            <p className="mt-3 text-sm text-zinc-500">Loading…</p>
+            <p className="mt-3 text-sm text-zinc-500" role="status">
+              Loading…
+            </p>
+          ) : members.length === 0 ? (
+            <p className="mt-3 text-sm text-zinc-500">No members yet.</p>
           ) : (
             <ul className="mt-3 divide-y divide-zinc-100">
               {members.map((member) => (
@@ -201,23 +219,28 @@ export function ShareModal({ documentId, open, onClose }: ShareModalProps) {
                     <span className="text-sm font-medium text-zinc-600">Owner</span>
                   ) : (
                     <div className="flex items-center gap-2">
-                      <select
-                        value={member.role}
-                        onChange={(e) =>
-                          void onChangeRole(
-                            member.user_id,
-                            e.target.value as "editor" | "viewer",
-                          )
-                        }
-                        className="select select-sm"
-                      >
-                        <option value="editor">Editor</option>
-                        <option value="viewer">Viewer</option>
-                      </select>
+                      <label>
+                        <span className="sr-only">
+                          Role for {member.name || member.email}
+                        </span>
+                        <select
+                          value={member.role}
+                          onChange={(e) =>
+                            void onChangeRole(
+                              member.user_id,
+                              e.target.value as "editor" | "viewer",
+                            )
+                          }
+                          className="select select-sm"
+                        >
+                          <option value="editor">Editor</option>
+                          <option value="viewer">Viewer</option>
+                        </select>
+                      </label>
                       <button
                         type="button"
                         onClick={() => void onRemove(member.user_id)}
-                        className="btn btn-ghost btn-sm text-red-600 hover:bg-red-50"
+                        className="btn btn-ghost btn-sm text-red-700 hover:bg-red-50"
                       >
                         Remove
                       </button>

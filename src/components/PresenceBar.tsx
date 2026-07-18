@@ -19,19 +19,34 @@ export function PresenceBar({ peers, connected }: PresenceBarProps) {
 
   if (peers.length === 0) {
     return connected ? (
-      <span className="text-xs text-zinc-400">Only you here</span>
+      <span className="text-xs text-zinc-500" role="status">
+        Only you here
+      </span>
     ) : null;
   }
 
+  const summary = peers
+    .map((peer) => {
+      const name = displayName(peer);
+      return peer.mode === "editing" ? `${name} (typing)` : name;
+    })
+    .join(", ");
+
   return (
-    <div className="flex items-center -space-x-2">
+    <div
+      className="flex items-center -space-x-2"
+      role="status"
+      aria-live="polite"
+      aria-label={`${peers.length} other ${peers.length === 1 ? "person" : "people"}: ${summary}`}
+    >
       {peers.slice(0, 5).map((peer) => {
         const name = displayName(peer);
         const initial = name.charAt(0).toUpperCase();
+        const label = `${name}${peer.mode === "editing" ? " (typing)" : ""}`;
         return (
           <span
             key={peer.userId}
-            title={`${name}${peer.mode === "editing" ? " (typing)" : ""}`}
+            title={label}
             className={`relative inline-flex size-8 items-center justify-center overflow-hidden rounded-full border-2 border-white text-xs font-semibold shadow-sm ${
               peer.mode === "editing"
                 ? "bg-[#1a73e8] text-white ring-2 ring-[#1a73e8]/30"
@@ -41,13 +56,16 @@ export function PresenceBar({ peers, connected }: PresenceBarProps) {
             {peer.image ? (
               <img src={peer.image} alt="" className="size-full object-cover" />
             ) : (
-              initial
+              <span aria-hidden>{initial}</span>
             )}
           </span>
         );
       })}
       {peers.length > 5 ? (
-        <span className="inline-flex size-8 items-center justify-center rounded-full border-2 border-white bg-zinc-100 text-[10px] font-semibold text-zinc-600">
+        <span
+          className="inline-flex size-8 items-center justify-center rounded-full border-2 border-white bg-zinc-100 text-[10px] font-semibold text-zinc-600"
+          aria-hidden
+        >
           +{peers.length - 5}
         </span>
       ) : null}
@@ -175,7 +193,11 @@ export function EditorTypingIndicator({
   if (labels.length === 0) return null;
 
   return (
-    <div className="pointer-events-none absolute inset-0 z-10 overflow-hidden">
+    <div
+      className="pointer-events-none absolute inset-0 z-10 overflow-hidden"
+      aria-live="polite"
+      aria-atomic="false"
+    >
       {labels.map((label) => {
         const initial = label.name.charAt(0).toUpperCase();
         return (
@@ -183,16 +205,23 @@ export function EditorTypingIndicator({
             key={label.userId}
             className="absolute flex flex-col items-start"
             style={{ top: label.top, left: label.left }}
+            aria-label={`${label.name} is typing`}
           >
             <div className="flex items-center gap-1">
-              <span className="inline-flex size-5 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#1a73e8] text-[10px] font-bold text-white shadow-sm ring-2 ring-white">
+              <span
+                className="inline-flex size-5 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#1a73e8] text-[10px] font-bold text-white shadow-sm ring-2 ring-white"
+                aria-hidden
+              >
                 {label.image ? (
                   <img src={label.image} alt="" className="size-full object-cover" />
                 ) : (
                   initial
                 )}
               </span>
-              <span className="rounded bg-[#1a73e8] px-1.5 py-0.5 text-[11px] font-semibold leading-none text-white shadow-sm">
+              <span
+                className="rounded bg-[#1a73e8] px-1.5 py-0.5 text-[11px] font-semibold leading-none text-white shadow-sm"
+                aria-hidden
+              >
                 {label.name}
               </span>
             </div>

@@ -2,7 +2,7 @@ import Head from "next/head";
 import Link from "next/link";
 import { signIn } from "next-auth/react";
 import type { FormEvent } from "react";
-import { useState } from "react";
+import { useId, useState } from "react";
 import { useRouter } from "next/router";
 import { SiteNav } from "@/components/SiteNav";
 import { PasswordInput } from "@/components/PasswordInput";
@@ -23,6 +23,15 @@ type FieldErrors = {
 
 export default function RegisterPage() {
   const router = useRouter();
+  const formId = useId();
+  const nameId = `${formId}-name`;
+  const emailId = `${formId}-email`;
+  const passwordId = `${formId}-password`;
+  const emailErrorId = `${formId}-email-error`;
+  const passwordErrorId = `${formId}-password-error`;
+  const passwordHelpId = `${formId}-password-help`;
+  const formErrorId = `${formId}-form-error`;
+
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -84,6 +93,10 @@ export default function RegisterPage() {
     await router.push("/");
   }
 
+  const passwordDescribedBy = fieldErrors.password
+    ? passwordErrorId
+    : passwordHelpId;
+
   return (
     <>
       <Head>
@@ -91,8 +104,8 @@ export default function RegisterPage() {
       </Head>
       <div className="flex min-h-screen flex-col bg-zinc-100 text-zinc-900">
         <SiteNav compact />
-        <main className="flex flex-1 items-center justify-center px-6 py-12">
-          <div className="w-full max-w-md rounded-2xl border border-zinc-200 bg-white p-8 shadow-sm">
+        <main className="flex flex-1 items-center justify-center px-4 py-12 sm:px-6">
+          <div className="w-full max-w-md rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm sm:p-8">
             <h1 className="text-2xl font-semibold tracking-tight text-zinc-900">
               Create account
             </h1>
@@ -101,9 +114,12 @@ export default function RegisterPage() {
             </p>
 
             <form onSubmit={onSubmit} noValidate className="mt-6 space-y-4">
-              <label className="block text-sm font-medium text-zinc-800">
-                Name
+              <div>
+                <label htmlFor={nameId} className="block text-sm font-medium text-zinc-800">
+                  Name
+                </label>
                 <input
+                  id={nameId}
                   type="text"
                   autoComplete="name"
                   placeholder="Your name"
@@ -111,10 +127,13 @@ export default function RegisterPage() {
                   onChange={(e) => setName(e.target.value)}
                   className={fieldClass(false)}
                 />
-              </label>
-              <label className="block text-sm font-medium text-zinc-800">
-                Email <span className="text-red-600">*</span>
+              </div>
+              <div>
+                <label htmlFor={emailId} className="block text-sm font-medium text-zinc-800">
+                  Email <span className="text-red-600">*</span>
+                </label>
                 <input
+                  id={emailId}
                   type="email"
                   autoComplete="email"
                   placeholder="you@example.com"
@@ -127,16 +146,25 @@ export default function RegisterPage() {
                   }}
                   className={fieldClass(Boolean(fieldErrors.email))}
                   aria-invalid={Boolean(fieldErrors.email)}
+                  aria-describedby={fieldErrors.email ? emailErrorId : undefined}
+                  required
                 />
                 {fieldErrors.email ? (
-                  <span className="mt-1.5 block text-xs font-medium text-red-600">
+                  <span
+                    id={emailErrorId}
+                    role="alert"
+                    className="mt-1.5 block text-xs font-medium text-red-600"
+                  >
                     {fieldErrors.email}
                   </span>
                 ) : null}
-              </label>
-              <label className="block text-sm font-medium text-zinc-800">
-                Password <span className="text-red-600">*</span>
+              </div>
+              <div>
+                <label htmlFor={passwordId} className="block text-sm font-medium text-zinc-800">
+                  Password <span className="text-red-600">*</span>
+                </label>
                 <PasswordInput
+                  id={passwordId}
                   autoComplete="new-password"
                   placeholder="At least 8 characters"
                   value={password}
@@ -148,20 +176,32 @@ export default function RegisterPage() {
                   }}
                   className={fieldClass(Boolean(fieldErrors.password))}
                   aria-invalid={Boolean(fieldErrors.password)}
+                  aria-describedby={passwordDescribedBy}
                 />
                 {fieldErrors.password ? (
-                  <span className="mt-1.5 block text-xs font-medium text-red-600">
+                  <span
+                    id={passwordErrorId}
+                    role="alert"
+                    className="mt-1.5 block text-xs font-medium text-red-600"
+                  >
                     {fieldErrors.password}
                   </span>
                 ) : (
-                  <span className="mt-1.5 block text-xs font-medium text-zinc-500">
+                  <span
+                    id={passwordHelpId}
+                    className="mt-1.5 block text-xs font-medium text-zinc-500"
+                  >
                     At least 8 characters
                   </span>
                 )}
-              </label>
+              </div>
 
               {error ? (
-                <p className="rounded-lg bg-red-50 px-3 py-2 text-sm font-medium text-red-700">
+                <p
+                  id={formErrorId}
+                  role="alert"
+                  className="rounded-lg bg-red-50 px-3 py-2 text-sm font-medium text-red-700"
+                >
                   {error}
                 </p>
               ) : null}
@@ -170,6 +210,7 @@ export default function RegisterPage() {
                 type="submit"
                 disabled={loading}
                 className="btn btn-primary btn-block"
+                aria-busy={loading}
               >
                 {loading ? "Creating…" : "Create account"}
               </button>
