@@ -12,6 +12,8 @@
     "db:migrate": "docker compose exec -T postgres psql -U docs -d google_docs_clone < db/migrate-003-yjs.sql && docker compose exec -T postgres psql -U docs -d google_docs_clone < db/migrate-004-document-versions.sql"
   },
   "dependencies": {
+    "@ai-sdk/google": "^4.0.18",
+    "ai": "^7.0.31",
     "bcryptjs": "^3.0.3",
     "dexie": "^4.4.4",
     "next": "16.2.10",

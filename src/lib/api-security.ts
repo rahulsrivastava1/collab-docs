@@ -79,6 +79,12 @@ export const registerSchema = z
   })
   .strict();
 
+export const documentAiSchema = z
+  .object({
+    action: z.enum(["summarize", "rewrite", "title"]),
+  })
+  .strict();
+
 export function parseBody<T>(
   schema: z.ZodType<T>,
   req: NextApiRequest,

@@ -39,6 +39,32 @@ The easiest way to deploy your Next.js app is to use the [Vercel Platform](https
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/pages/building-your-application/deploying) for more details.
 
+## AI features (Gemini)
+
+The document editor includes three Gemini-powered actions:
+
+| Action | Who | Effect |
+|--------|-----|--------|
+| **Summarize** | Owner / Editor / Viewer | Shows a bullet summary (does not change the doc) |
+| **Rewrite** | Owner / Editor | Preview → Apply goes through the normal Yjs/sync path |
+| **Generate title** | Owner / Editor | Fills the title field and autosaves |
+
+### Setup
+
+1. Create a free API key at [Google AI Studio](https://aistudio.google.com/app/apikey).
+2. Add it to `.env`:
+
+```bash
+GOOGLE_GENERATIVE_AI_API_KEY=your_key_here
+AI_RATE_LIMIT_MINUTES=5
+```
+
+3. Restart `pnpm dev`.
+
+Without the key, AI buttons return a clear “not configured” error. The rate
+limit is one request per user per action within `AI_RATE_LIMIT_MINUTES`
+(defaults to 5).
+
 ## Security model
 
 - Google sign-in clears any prior password hash for that email so an unverified
@@ -51,8 +77,12 @@ Check out our [Next.js deployment documentation](https://nextjs.org/docs/pages/b
   fields, invalid roles, malformed base64, and oversized values are rejected.
 - Next.js body-parser limits cap requests before application parsing. Document
   updates allow 768 KB; smaller endpoints use 1–8 KB limits.
-- Writes, presence heartbeats, SSE reconnects, restores, sharing, and registration
-  are rate limited with `Retry-After` and `RateLimit-*` response headers.
+- Writes, presence heartbeats, SSE reconnects, restores, sharing, registration,
+  and AI actions are rate limited with `Retry-After` and `RateLimit-*` response
+  headers. Each AI action (summarize / rewrite / title) is limited to one use
+  per user within the configurable `AI_RATE_LIMIT_MINUTES` window.
+- AI requests never accept client-supplied document text; the server loads
+  content from the membership-scoped document row before calling Gemini.
 - Cookie-authenticated mutations reject cross-site requests using `Origin` and
   `Sec-Fetch-Site`. NextAuth provides CSRF protection for auth endpoints.
 - Responses include CSP, clickjacking, MIME sniffing, referrer, and permissions

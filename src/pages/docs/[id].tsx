@@ -13,6 +13,7 @@ import {
   HistoryPanel,
   type RestoredDocument,
 } from "@/components/HistoryPanel";
+import { AiPanel } from "@/components/AiPanel";
 import { PresenceBar, EditorTypingIndicator } from "@/components/PresenceBar";
 import { useSync } from "@/components/SyncProvider";
 import {
@@ -572,6 +573,24 @@ export default function DocumentEditorPage() {
             <div className="flex flex-col items-stretch gap-2 sm:items-end">
               <PresenceBar peers={peers} connected={realtimeConnected} />
               <div className="flex flex-wrap items-center justify-end gap-2">
+                {id ? (
+                  <AiPanel
+                    documentId={id}
+                    canEdit={editable}
+                    online={online}
+                    currentContent={contentRef.current || content}
+                    onApplyRewrite={(nextContent) => {
+                      writeBodyContent(nextContent, { force: true });
+                      markTyping();
+                      void persistLocalAndMaybeSync(titleRef.current, nextContent);
+                    }}
+                    onApplyTitle={(nextTitle) => {
+                      const cleaned = nextTitle.trim() || "Untitled document";
+                      setTitle(cleaned);
+                      markTyping();
+                    }}
+                  />
+                ) : null}
                 <button
                   type="button"
                   onClick={() => setHistoryOpen(true)}
