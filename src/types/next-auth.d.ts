@@ -6,10 +6,15 @@ declare module "next-auth" {
       id: string;
     } & DefaultSession["user"];
   }
+
+  interface User {
+    authVersion?: number;
+  }
 }
 
 declare module "next-auth/jwt" {
   interface JWT {
     sub?: string;
+    authVersion?: number;
   }
 }

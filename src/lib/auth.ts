@@ -2,7 +2,7 @@ import type { NextAuthOptions } from "next-auth";
 import GoogleProvider from "next-auth/providers/google";
 import CredentialsProvider from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
-import { findUserByEmail, upsertGoogleUser } from "@/lib/users";
+import { findUserByEmail, findUserById, upsertGoogleUser } from "@/lib/users";
 
 export const authOptions: NextAuthOptions = {
   session: {
@@ -40,11 +40,18 @@ export const authOptions: NextAuthOptions = {
           return null;
         }
 
+        // New credentials accounts must verify before login.
+        // Existing accounts were grandfathered with email_verified set.
+        if (!user.email_verified) {
+          throw new Error("EMAIL_NOT_VERIFIED");
+        }
+
         return {
           id: user.id,
           email: user.email,
           name: user.name,
           image: user.image,
+          authVersion: user.auth_version ?? 1,
         };
       },
     }),
@@ -62,6 +69,7 @@ export const authOptions: NextAuthOptions = {
           image: user.image,
         });
         user.id = dbUser.id;
+        user.authVersion = dbUser.auth_version ?? 1;
       }
 
       return true;
@@ -72,23 +80,44 @@ export const authOptions: NextAuthOptions = {
         token.email = user.email;
         token.name = user.name;
         token.picture = user.image;
+        token.authVersion = user.authVersion ?? 1;
+        return token;
       }
 
-      // Ensure Google sign-in maps to our DB user id
-      if (!token.sub && token.email) {
-        const dbUser = await findUserByEmail(String(token.email));
-        if (dbUser) {
-          token.sub = dbUser.id;
-          token.name = dbUser.name;
-          token.picture = dbUser.image;
-        }
+      if (!token.sub) {
+        return token;
       }
 
+      // Reject sessions invalidated by password reset (auth_version bump).
+      const dbUser = await findUserById(token.sub);
+      if (!dbUser) {
+        return { ...token, sub: undefined, authVersion: undefined };
+      }
+
+      if ((dbUser.auth_version ?? 1) !== (token.authVersion ?? 1)) {
+        return { ...token, sub: undefined, authVersion: undefined };
+      }
+
+      token.email = dbUser.email;
+      token.name = dbUser.name;
+      token.picture = dbUser.image;
+      token.authVersion = dbUser.auth_version ?? 1;
       return token;
     },
     async session({ session, token }) {
+      if (!token.sub) {
+        // Force clients to treat this as signed out after password reset.
+        session.user = {
+          id: "",
+          email: undefined,
+          name: undefined,
+          image: undefined,
+        };
+        return session;
+      }
+
       if (session.user) {
-        session.user.id = token.sub ?? "";
+        session.user.id = token.sub;
         session.user.email = token.email as string | undefined;
         session.user.name = token.name as string | null | undefined;
         session.user.image = token.picture as string | null | undefined;

@@ -35,6 +35,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [error, setError] = useState<string | null>(null);
+  const [needsVerification, setNeedsVerification] = useState(false);
   const [loading, setLoading] = useState(false);
 
   function validate() {
@@ -55,6 +56,7 @@ export default function LoginPage() {
   async function onSubmit(event: FormEvent) {
     event.preventDefault();
     setError(null);
+    setNeedsVerification(false);
 
     if (!validate()) return;
 
@@ -69,6 +71,11 @@ export default function LoginPage() {
     setLoading(false);
 
     if (result?.error) {
+      if (result.error === "EMAIL_NOT_VERIFIED") {
+        setNeedsVerification(true);
+        setError("Verify your email before signing in.");
+        return;
+      }
       setError("Invalid email or password.");
       return;
     }
@@ -142,9 +149,17 @@ export default function LoginPage() {
                 ) : null}
               </div>
               <div>
-                <label htmlFor={passwordId} className="block text-sm font-medium text-zinc-800">
-                  Password <span className="text-red-600">*</span>
-                </label>
+                <div className="flex items-center justify-between gap-3">
+                  <label htmlFor={passwordId} className="block text-sm font-medium text-zinc-800">
+                    Password <span className="text-red-600">*</span>
+                  </label>
+                  <Link
+                    href="/forgot-password"
+                    className="text-xs font-semibold text-[#1a73e8] hover:underline"
+                  >
+                    Forgot password?
+                  </Link>
+                </div>
                 <PasswordInput
                   id={passwordId}
                   autoComplete="current-password"
@@ -172,13 +187,26 @@ export default function LoginPage() {
               </div>
 
               {error ? (
-                <p
+                <div
                   id={formErrorId}
                   role="alert"
                   className="rounded-lg bg-red-50 px-3 py-2 text-sm font-medium text-red-700"
                 >
-                  {error}
-                </p>
+                  <p>{error}</p>
+                  {needsVerification ? (
+                    <p className="mt-1.5 font-normal">
+                      <Link
+                        href={{
+                          pathname: "/verify-email",
+                          query: { email: email.trim().toLowerCase() },
+                        }}
+                        className="font-semibold underline"
+                      >
+                        Enter verification code
+                      </Link>
+                    </p>
+                  ) : null}
+                </div>
               ) : null}
 
               <button

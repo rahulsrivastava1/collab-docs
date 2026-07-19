@@ -1,6 +1,5 @@
 import Head from "next/head";
 import Link from "next/link";
-import { signIn } from "next-auth/react";
 import type { FormEvent } from "react";
 import { useId, useState } from "react";
 import { useRouter } from "next/router";
@@ -63,34 +62,37 @@ export default function RegisterPage() {
 
     setLoading(true);
 
-    const response = await fetch("/api/auth/register", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, email, password }),
-    });
+    try {
+      const response = await fetch("/api/auth/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, email, password }),
+      });
 
-    const data = (await response.json()) as { error?: string };
+      const data = (await response.json()) as { error?: string; email?: string };
 
-    if (!response.ok) {
+      if (!response.ok) {
+        const apiError = data.error ?? "Could not create account.";
+        if (response.status === 409) {
+          setError(
+            "An account with this email already exists. Please sign in instead."
+          );
+        } else {
+          setError(apiError);
+        }
+        return;
+      }
+
+      const verifiedEmail = data.email ?? email.trim().toLowerCase();
+      await router.push({
+        pathname: "/verify-email",
+        query: { email: verifiedEmail },
+      });
+    } catch {
+      setError("Network error. Please try again.");
+    } finally {
       setLoading(false);
-      setError(data.error ?? "Could not create account.");
-      return;
     }
-
-    const result = await signIn("credentials", {
-      email,
-      password,
-      redirect: false,
-    });
-
-    setLoading(false);
-
-    if (result?.error) {
-      setError("Account created, but sign-in failed. Try logging in.");
-      return;
-    }
-
-    await router.push("/");
   }
 
   const passwordDescribedBy = fieldErrors.password
@@ -110,7 +112,8 @@ export default function RegisterPage() {
               Create account
             </h1>
             <p className="mt-2 text-sm leading-relaxed text-zinc-600">
-              Register with email and password, or use Google on the sign-in page.
+              Register with email and password. We will send a verification code
+              before you can sign in. Or use Google on the sign-in page.
             </p>
 
             <form onSubmit={onSubmit} noValidate className="mt-6 space-y-4">
@@ -202,7 +205,20 @@ export default function RegisterPage() {
                   role="alert"
                   className="rounded-lg bg-red-50 px-3 py-2 text-sm font-medium text-red-700"
                 >
-                  {error}
+                  {error.includes("already exists") ? (
+                    <>
+                      An account with this email already exists.{" "}
+                      <Link
+                        href="/login"
+                        className="font-semibold underline underline-offset-2 hover:text-red-800"
+                      >
+                        Please sign in
+                      </Link>{" "}
+                      instead.
+                    </>
+                  ) : (
+                    error
+                  )}
                 </p>
               ) : null}
 

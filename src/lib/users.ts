@@ -7,6 +7,7 @@ export type UserRow = {
   email_verified: Date | null;
   image: string | null;
   password_hash: string | null;
+  auth_version: number;
   created_at: Date;
   updated_at: Date;
 };
@@ -47,6 +48,33 @@ export async function createUser(input: {
     ],
   );
   return result.rows[0];
+}
+
+export async function markEmailVerified(userId: string) {
+  const result = await query<UserRow>(
+    `UPDATE users
+     SET email_verified = NOW(),
+         updated_at = NOW()
+     WHERE id = $1
+     RETURNING *`,
+    [userId],
+  );
+  return result.rows[0] ?? null;
+}
+
+export async function updatePasswordHash(userId: string, passwordHash: string) {
+  const result = await query<UserRow>(
+    `UPDATE users
+     SET password_hash = $2,
+         auth_version = auth_version + 1,
+         email_verified = COALESCE(email_verified, NOW()),
+         updated_at = NOW()
+     WHERE id = $1
+       AND password_hash IS NOT NULL
+     RETURNING *`,
+    [userId, passwordHash],
+  );
+  return result.rows[0] ?? null;
 }
 
 export async function upsertGoogleUser(input: {
