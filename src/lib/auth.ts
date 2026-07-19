@@ -40,12 +40,6 @@ export const authOptions: NextAuthOptions = {
           return null;
         }
 
-        // New credentials accounts must verify before login.
-        // Existing accounts were grandfathered with email_verified set.
-        if (!user.email_verified) {
-          throw new Error("EMAIL_NOT_VERIFIED");
-        }
-
         return {
           id: user.id,
           email: user.email,
@@ -88,7 +82,7 @@ export const authOptions: NextAuthOptions = {
         return token;
       }
 
-      // Reject sessions invalidated by password reset (auth_version bump).
+      // Reject sessions invalidated after auth_version changes.
       const dbUser = await findUserById(token.sub);
       if (!dbUser) {
         return { ...token, sub: undefined, authVersion: undefined };
@@ -106,7 +100,7 @@ export const authOptions: NextAuthOptions = {
     },
     async session({ session, token }) {
       if (!token.sub) {
-        // Force clients to treat this as signed out after password reset.
+        // Force clients to treat this as signed out when the JWT is invalidated.
         session.user = {
           id: "",
           email: undefined,

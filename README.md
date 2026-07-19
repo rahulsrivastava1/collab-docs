@@ -4,8 +4,7 @@ A real-time collaborative document editor built with Next.js and PostgreSQL. Cre
 
 ## Features
 
-- **Accounts & sign-in** — Email + password (with 6-digit email verification codes) or Google sign-in.
-- **Password reset** — Secure "forgot password" flow with emailed one-time codes.
+- **Accounts & sign-in** — Email + password or Google sign-in.
 - **Documents** — Create, rename, edit, and delete documents with autosave.
 - **Real-time collaboration** — Multiple people can edit the same document at once; edits merge automatically (CRDT/Yjs) with no conflicts.
 - **Live presence** — See who else is viewing or editing, including where they are typing.
@@ -43,8 +42,7 @@ At minimum you need:
 |----------|---------------|---------------|
 | `NEXTAUTH_SECRET` | Session/JWT signing | Run `openssl rand -base64 32` |
 | `DATABASE_URL` | PostgreSQL connection | Local Docker default works out of the box |
-| `SMTP_*` / `EMAIL_FROM` | Sending verification & reset codes | Any SMTP provider (Gmail app password, Mailtrap, Resend, etc.) |
-| `GOOGLE_GENERATIVE_AI_API_KEY` | AI features | Free key at [Google AI Studio](https://aistudio.google.com/app/apikey) |
+| `GOOGLE_GENERATIVE_AI_API_KEY` | AI features (optional) | Free key at [Google AI Studio](https://aistudio.google.com/app/apikey) |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Google sign-in (optional) | [Google Cloud Console](https://console.cloud.google.com/apis/credentials) |
 
 > Google sign-in and AI features are optional — the app runs without them, and those buttons simply return a clear "not configured" message.
@@ -73,7 +71,7 @@ Open [http://localhost:3000](http://localhost:3000).
 
 ## How to use
 
-1. Register with your email, then enter the 6-digit code sent to your inbox (or sign in with Google).
+1. Create an account with email and password, or sign in with Google.
 2. Create a new document from the dashboard.
 3. Click **Share** to invite others as Editor or Viewer.
 4. Open the same document in another browser/account to see live collaboration and presence.

@@ -50,41 +50,14 @@ export async function createUser(input: {
   return result.rows[0];
 }
 
-export async function markEmailVerified(userId: string) {
-  const result = await query<UserRow>(
-    `UPDATE users
-     SET email_verified = NOW(),
-         updated_at = NOW()
-     WHERE id = $1
-     RETURNING *`,
-    [userId],
-  );
-  return result.rows[0] ?? null;
-}
-
-export async function updatePasswordHash(userId: string, passwordHash: string) {
-  const result = await query<UserRow>(
-    `UPDATE users
-     SET password_hash = $2,
-         auth_version = auth_version + 1,
-         email_verified = COALESCE(email_verified, NOW()),
-         updated_at = NOW()
-     WHERE id = $1
-       AND password_hash IS NOT NULL
-     RETURNING *`,
-    [userId, passwordHash],
-  );
-  return result.rows[0] ?? null;
-}
-
 export async function upsertGoogleUser(input: {
   name?: string | null;
   email: string;
   image?: string | null;
 }) {
   // Google proves email ownership. Clear any password that may have been set by
-  // an earlier unverified credentials registration for the same address so an
-  // attacker cannot keep password access after the real owner signs in with Google.
+  // an earlier credentials registration for the same address so the Google owner
+  // is the sole way to access the account after linking.
   const result = await query<UserRow>(
     `INSERT INTO users (name, email, image, email_verified)
      VALUES ($1, $2, $3, NOW())

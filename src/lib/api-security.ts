@@ -85,32 +85,6 @@ export const documentAiSchema = z
   })
   .strict();
 
-export const emailOnlySchema = z
-  .object({
-    email: z.string().trim().toLowerCase().pipe(z.email().max(254)),
-  })
-  .strict();
-
-export const otpCodeSchema = z
-  .string()
-  .trim()
-  .regex(/^\d{6}$/, "Code must be 6 digits");
-
-export const verifyEmailSchema = z
-  .object({
-    email: z.string().trim().toLowerCase().pipe(z.email().max(254)),
-    code: otpCodeSchema,
-  })
-  .strict();
-
-export const resetPasswordSchema = z
-  .object({
-    email: z.string().trim().toLowerCase().pipe(z.email().max(254)),
-    code: otpCodeSchema,
-    password: z.string().min(8).max(128),
-  })
-  .strict();
-
 export function parseBody<T>(
   schema: z.ZodType<T>,
   req: NextApiRequest,

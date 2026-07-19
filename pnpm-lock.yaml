@@ -26,9 +26,6 @@ importers:
       next-auth:
         specifier: ^4.24.14
         version: 4.24.14(next@16.2.10(react-dom@19.2.4(react@19.2.4))(react@19.2.4))(nodemailer@7.0.13)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
-      nodemailer:
-        specifier: ^7.0.13
-        version: 7.0.13
       pg:
         specifier: ^8.22.0
         version: 8.22.0
@@ -54,9 +51,6 @@ importers:
       '@types/node':
         specifier: ^20
         version: 20.19.43
-      '@types/nodemailer':
-        specifier: ^7.0.4
-        version: 7.0.12
       '@types/pg':
         specifier: ^8.20.0
         version: 8.20.0
@@ -415,9 +409,6 @@ packages:
 
   '@types/node@20.19.43':
     resolution: {integrity: sha512-6oYBAi5ikg4Pl+kGsoYtawUMBT2zZMCvPNF7pVLnHZfd1zf38DRiWn/gT01RYCdUqkv7Fhr+C9ot4/tb+2sVvA==}
-
-  '@types/nodemailer@7.0.12':
-    resolution: {integrity: sha512-80vKwiIsVSyFA1rRovH59jNPLBOuc6dRZIHEu40gXTkBkZnQv8vog1xSGEb9j5q/tdMAs5ivvDR2pLTU0hGHXA==}
 
   '@types/pg@8.20.0':
     resolution: {integrity: sha512-bEPFOaMAHTEP1EzpvHTbmwR8UsFyHSKsRisLIHVMXnpNefSbGA1bD6CVy+qKjGSqmZqNqBDV2azOBo8TgkcVow==}
@@ -1055,10 +1046,6 @@ snapshots:
     dependencies:
       undici-types: 6.21.0
 
-  '@types/nodemailer@7.0.12':
-    dependencies:
-      '@types/node': 20.19.43
-
   '@types/pg@8.20.0':
     dependencies:
       '@types/node': 20.19.43
@@ -1221,7 +1208,8 @@ snapshots:
       - '@babel/core'
       - babel-plugin-macros
 
-  nodemailer@7.0.13: {}
+  nodemailer@7.0.13:
+    optional: true
 
   oauth@0.9.15: {}
 

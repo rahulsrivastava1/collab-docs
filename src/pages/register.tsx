@@ -69,7 +69,7 @@ export default function RegisterPage() {
         body: JSON.stringify({ name, email, password }),
       });
 
-      const data = (await response.json()) as { error?: string; email?: string };
+      const data = (await response.json()) as { error?: string };
 
       if (!response.ok) {
         const apiError = data.error ?? "Could not create account.";
@@ -83,11 +83,7 @@ export default function RegisterPage() {
         return;
       }
 
-      const verifiedEmail = data.email ?? email.trim().toLowerCase();
-      await router.push({
-        pathname: "/verify-email",
-        query: { email: verifiedEmail },
-      });
+      await router.push("/login");
     } catch {
       setError("Network error. Please try again.");
     } finally {
@@ -112,8 +108,7 @@ export default function RegisterPage() {
               Create account
             </h1>
             <p className="mt-2 text-sm leading-relaxed text-zinc-600">
-              Register with email and password. We will send a verification code
-              before you can sign in. Or use Google on the sign-in page.
+              Register with email and password, or use Google on the sign-in page.
             </p>
 
             <form onSubmit={onSubmit} noValidate className="mt-6 space-y-4">

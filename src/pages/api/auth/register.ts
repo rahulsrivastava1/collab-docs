@@ -1,8 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import bcrypt from "bcryptjs";
 import { createUser, findUserByEmail } from "@/lib/users";
-import { issueAuthCode } from "@/lib/auth-codes";
-import { sendAuthCodeEmail } from "@/lib/email";
 import {
   enforceRateLimit,
   parseBody,
@@ -56,35 +54,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   try {
     const passwordHash = await bcrypt.hash(body.password, 12);
-    const user = await createUser({
+    await createUser({
       name: body.name || null,
       email: body.email,
       passwordHash,
-      emailVerified: null,
-    });
-
-    const { code } = await issueAuthCode({
-      userId: user.id,
-      email: user.email,
-      purpose: "verify_email",
-    });
-
-    await sendAuthCodeEmail({
-      to: user.email,
-      purpose: "verify_email",
-      code,
+      emailVerified: new Date(),
     });
 
     return res.status(201).json({
       ok: true,
-      email: user.email,
-      message: "Check your email for a verification code.",
+      message: "Account created. You can sign in.",
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Could not create account";
-    if (message.includes("Email is not configured") || message.includes("AUTH_CODE_SECRET")) {
-      return res.status(503).json({ error: message });
-    }
     // Unique email race
     if (typeof message === "string" && message.includes("users_email")) {
       return res.status(409).json({
