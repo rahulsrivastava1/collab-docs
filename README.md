@@ -1,147 +1,94 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/pages/api-reference/create-next-app).
+# Google Docs Clone
 
-## Getting Started
+A real-time collaborative document editor built with Next.js and PostgreSQL. Create, share, and edit rich documents together, with live presence, version history, and AI writing assistance.
 
-First, run the development server:
+## Features
+
+- **Accounts & sign-in** — Email + password (with 6-digit email verification codes) or Google sign-in.
+- **Password reset** — Secure "forgot password" flow with emailed one-time codes.
+- **Documents** — Create, rename, edit, and delete documents with autosave.
+- **Real-time collaboration** — Multiple people can edit the same document at once; edits merge automatically (CRDT/Yjs) with no conflicts.
+- **Live presence** — See who else is viewing or editing, including where they are typing.
+- **Sharing & roles** — Invite people as **Owner**, **Editor**, or **Viewer** with per-role permissions.
+- **Version history** — Browse previous versions of a document and restore any of them.
+- **AI assistance (Gemini)** — Summarize a document, rewrite selected text, or auto-generate a title.
+
+## Requirements
+
+- **Node.js** 20.9 or newer
+- **pnpm** (`npm install -g pnpm`)
+- **Docker** (for the local PostgreSQL database) — or any PostgreSQL database URL
+
+## Getting started
+
+### 1. Clone and install
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
+git clone <your-repo-url>
+cd google-docs-clone
+pnpm install
+```
+
+### 2. Configure environment
+
+Copy the example file and fill in the values:
+
+```bash
+cp .env.example .env
+```
+
+At minimum you need:
+
+| Variable | What it's for | How to get it |
+|----------|---------------|---------------|
+| `NEXTAUTH_SECRET` | Session/JWT signing | Run `openssl rand -base64 32` |
+| `DATABASE_URL` | PostgreSQL connection | Local Docker default works out of the box |
+| `SMTP_*` / `EMAIL_FROM` | Sending verification & reset codes | Any SMTP provider (Gmail app password, Mailtrap, Resend, etc.) |
+| `GOOGLE_GENERATIVE_AI_API_KEY` | AI features | Free key at [Google AI Studio](https://aistudio.google.com/app/apikey) |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Google sign-in (optional) | [Google Cloud Console](https://console.cloud.google.com/apis/credentials) |
+
+> Google sign-in and AI features are optional — the app runs without them, and those buttons simply return a clear "not configured" message.
+
+### 3. Start the database
+
+Using the included Docker setup (tables are created automatically on first start):
+
+```bash
+pnpm db:up
+```
+
+Prefer a hosted database (Neon, Supabase, Aiven, etc.)? Set `DATABASE_URL` to your connection string (include `?sslmode=require`) and create the tables once:
+
+```bash
+psql "$DATABASE_URL" -f db/init.sql
+```
+
+### 4. Run the app
+
+```bash
 pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000).
 
-You can start editing the page by modifying `pages/index.tsx`. The page auto-updates as you edit the file.
+## How to use
 
-[API routes](https://nextjs.org/docs/pages/building-your-application/routing/api-routes) can be accessed on [http://localhost:3000/api/hello](http://localhost:3000/api/hello). This endpoint can be edited in `pages/api/hello.ts`.
+1. Register with your email, then enter the 6-digit code sent to your inbox (or sign in with Google).
+2. Create a new document from the dashboard.
+3. Click **Share** to invite others as Editor or Viewer.
+4. Open the same document in another browser/account to see live collaboration and presence.
+5. Use the **History** panel to view or restore earlier versions, and the **AI** panel to summarize, rewrite, or title your document.
 
-The `pages/api` directory is mapped to `/api/*`. Files in this directory are treated as [API routes](https://nextjs.org/docs/pages/building-your-application/routing/api-routes) instead of React pages.
+## Available scripts
 
-This project uses [`next/font`](https://nextjs.org/docs/pages/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+| Command | Description |
+|---------|-------------|
+| `pnpm dev` | Start the development server |
+| `pnpm build` | Build for production |
+| `pnpm start` | Run the production build |
+| `pnpm db:up` | Start the local PostgreSQL container |
+| `pnpm db:down` | Stop the local PostgreSQL container |
 
-## Learn More
+## Tech stack
 
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn-pages-router) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/pages/building-your-application/deploying) for more details.
-
-## Auth email (verification & password reset)
-
-Password accounts created after this feature require a **6-digit email code**
-before sign-in. Google sign-in is unchanged and does not use these codes.
-
-Existing password accounts were marked verified by migration `005` and keep
-working without re-verification.
-
-### Setup
-
-1. Configure SMTP in `.env` (Gmail app password, Mailtrap, Resend SMTP, etc.):
-
-```bash
-SMTP_HOST=smtp.example.com
-SMTP_PORT=587
-SMTP_SECURE=false
-SMTP_USER=your-smtp-user
-SMTP_PASS=your-smtp-password
-EMAIL_FROM="Google Docs Clone <noreply@example.com>"
-# Optional; defaults to NEXTAUTH_SECRET
-AUTH_CODE_SECRET=generate-with-openssl-rand-base64-32
-```
-
-2. Apply the auth migration (existing Docker volume):
-
-```bash
-pnpm db:migrate
-```
-
-3. Restart `pnpm dev`.
-
-### Flows
-
-| Flow | Behavior |
-|------|----------|
-| **Register** | Creates unverified user, emails a code, redirects to `/verify-email` |
-| **Verify** | Code sets `email_verified`; then sign in on `/login` |
-| **Forgot password** | Always returns a generic success; emails a code only for verified password accounts |
-| **Reset password** | Validates code, updates hash, bumps `auth_version` (invalidates old JWT sessions) |
-| **Google** | Unaffected; forgot-password is a no-op for Google-only accounts |
-
-Codes expire in **10 minutes**, allow **5** failed attempts, and are stored as
-HMAC hashes (never plaintext).
-
-## AI features (Gemini)
-
-The document editor includes three Gemini-powered actions:
-
-| Action | Who | Effect |
-|--------|-----|--------|
-| **Summarize** | Owner / Editor / Viewer | Shows a bullet summary (does not change the doc) |
-| **Rewrite** | Owner / Editor | Preview → Apply goes through the normal Yjs/sync path |
-| **Generate title** | Owner / Editor | Fills the title field and autosaves |
-
-### Setup
-
-1. Create a free API key at [Google AI Studio](https://aistudio.google.com/app/apikey).
-2. Add it to `.env`:
-
-```bash
-GOOGLE_GENERATIVE_AI_API_KEY=your_key_here
-AI_RATE_LIMIT_MINUTES=5
-```
-
-3. Restart `pnpm dev`.
-
-Without the key, AI buttons return a clear “not configured” error. The rate
-limit is one request per user per action within `AI_RATE_LIMIT_MINUTES`
-(defaults to 5).
-
-## Security model
-
-- New credentials registrations require email verification before login. Existing
-  password accounts were grandfathered as verified. Google sign-in is unchanged.
-- Auth codes are HMAC-hashed at rest, expire in 10 minutes, and are consumed
-  after success or lockout. Forgot-password responses do not reveal whether an
-  email exists or is Google-only.
-- Password reset increments `auth_version`, so older JWT sessions stop working.
-- Google sign-in clears any prior password hash for that email so an unverified
-  credentials registration cannot keep access after the real owner links Google.
-- Content and Yjs writes require a matching `yjsGeneration`, so stale clients
-  cannot overwrite a restored document through the plain-content path.
-- Every document read is scoped through `document_members`; mutations also repeat
-  the role check inside SQL to reduce authorization time-of-check/time-of-use races.
-- API bodies and UUID route parameters use strict runtime Zod validation. Unknown
-  fields, invalid roles, malformed base64, and oversized values are rejected.
-- Next.js body-parser limits cap requests before application parsing. Document
-  updates allow 768 KB; smaller endpoints use 1–8 KB limits.
-- Writes, presence heartbeats, SSE reconnects, restores, sharing, registration,
-  and AI actions are rate limited with `Retry-After` and `RateLimit-*` response
-  headers. Each AI action (summarize / rewrite / title) is limited to one use
-  per user within the configurable `AI_RATE_LIMIT_MINUTES` window.
-- AI requests never accept client-supplied document text; the server loads
-  content from the membership-scoped document row before calling Gemini.
-- Cookie-authenticated mutations reject cross-site requests using `Origin` and
-  `Sec-Fetch-Site`. NextAuth provides CSRF protection for auth endpoints.
-- Responses include CSP, clickjacking, MIME sniffing, referrer, and permissions
-  security headers.
-- History reads are capped at the 20 newest snapshots to prevent unbounded reads.
-
-### Deployment note
-
-The included limiter is process-local, suitable for local development and one
-long-running Node process. Multi-instance production must replace it with a shared
-Redis or database-backed limiter. PostgreSQL row-level security is not enabled, so
-new database access must preserve the existing membership-scoped query pattern.
+Next.js · React · TypeScript · PostgreSQL · NextAuth · Yjs · Tailwind CSS · Google Gemini
