@@ -45,39 +45,27 @@ export default function Home() {
         <SiteNav />
 
         <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col justify-center px-4 py-12 sm:px-6 sm:py-16">
-          <p className="text-sm font-semibold tracking-wide text-[#1a73e8]">
-            House of Edtech · Assignment
-          </p>
-          <h1 className="mt-3 text-3xl font-semibold tracking-tight text-zinc-900 sm:text-5xl">
-            {SITE.name}
-          </h1>
+          <h1 className="mt-3 text-3xl font-semibold tracking-tight text-zinc-900 sm:text-5xl">{SITE.name}</h1>
           <p className="mt-4 max-w-xl text-base leading-relaxed text-zinc-600 sm:text-lg">
             {isLoggedIn
-              ? `Welcome back${session?.user?.name ? `, ${session.user.name}` : ""}. Open your documents to create, edit, and share.`
+              ? `Welcome back${
+                  session?.user?.name ? `, ${session.user.name}` : ""
+                }. Open your documents to create, edit, and share.`
               : "Local-first collaborative documents with offline sync, deterministic conflict resolution, and version history."}
           </p>
           {status !== "loading" && !isLoggedIn ? (
             <div className="mt-8 flex flex-wrap gap-3">
-              <Link
-                href="/register"
-                className="btn btn-primary"
-              >
+              <Link href="/register" className="btn btn-primary">
                 Get started
               </Link>
-              <Link
-                href="/login"
-                className="btn btn-secondary"
-              >
+              <Link href="/login" className="btn btn-secondary">
                 Sign in
               </Link>
             </div>
           ) : null}
           {status !== "loading" && isLoggedIn ? (
             <div className="mt-8">
-              <Link
-                href="/docs"
-                className="btn btn-primary"
-              >
+              <Link href="/docs" className="btn btn-primary">
                 Open documents
               </Link>
             </div>
